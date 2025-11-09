@@ -1,14 +1,11 @@
 import time
 import random
-from io import BytesIO
-
 import streamlit as st
-from gtts import gTTS
 
-st.set_page_config(page_title="장태순 여사님 전용 테스트", page_icon="🇯🇵", layout="centered")
+st.set_page_config(page_title="한국어 발음 플래시카드", page_icon="🇯🇵", layout="centered")
 
 # -----------------------------
-# Data
+# Kana Data (기존 베이스 + 탁/반탁음)
 # -----------------------------
 HIRAGANA_BASE = {
     "あ":"a","い":"i","う":"u","え":"e","お":"o",
@@ -22,7 +19,6 @@ HIRAGANA_BASE = {
     "ら":"ra","り":"ri","る":"ru","れ":"re","ろ":"ro",
     "わ":"wa","を":"o","ん":"n",
 }
-
 KATAKANA_BASE = {
     "ア":"a","イ":"i","ウ":"u","エ":"e","オ":"o",
     "カ":"ka","キ":"ki","ク":"ku","ケ":"ke","コ":"ko",
@@ -35,7 +31,6 @@ KATAKANA_BASE = {
     "ラ":"ra","リ":"ri","ル":"ru","レ":"re","ロ":"ro",
     "ワ":"wa","ヲ":"o","ン":"n",
 }
-
 HIRAGANA_DAKUTEN = {
     "が":"ga","ぎ":"gi","ぐ":"gu","げ":"ge","ご":"go",
     "ざ":"za","じ":"ji","ず":"zu","ぜ":"ze","ぞ":"zo",
@@ -47,12 +42,16 @@ KATAKANA_DAKUTEN = {
     "ガ":"ga","ギ":"gi","グ":"gu","ゲ":"ge","ゴ":"go",
     "ザ":"za","ジ":"ji","ズ":"zu","ゼ":"ze","ゾ":"zo",
     "ダ":"da","ヂ":"ji","ヅ":"zu","デ":"de","ド":"do",
-    "バ":"ba","ビ":"bi","ブ":"bu","ベ":"be","ボ":"bo",
+    "バ":"ba","비":"bi","ブ":"bu","ベ":"be","ボ":"bo",
     "パ":"pa","ピ":"pi","プ":"pu","ペ":"pe","ポ":"po",
 }
+# 오타 수정: KATAKANA_DAKUTEN의 '비' -> 'ビ'
+KATAKANA_DAKUTEN["ビ"] = KATAKANA_DAKUTEN.pop("비")
 
-# 한국어 근사 발음 (오디오용) — 단음 기준 간략 매핑
-# (학습용 단순화: tsu=쓰, fu=후, wo=오, ん=응)
+# -----------------------------
+# 한국어(한글) 근사 발음 매핑 (단음 기반)
+#   - 학습을 돕기 위한 단순화 버전입니다.
+# -----------------------------
 ROMA2HANGUL = {
     "a":"아","i":"이","u":"우","e":"에","o":"오",
     "ka":"카","ki":"키","ku":"쿠","ke":"케","ko":"코",
@@ -71,96 +70,102 @@ ROMA2HANGUL = {
     "pa":"파","pi":"피","pu":"푸","pe":"페","po":"포",
 }
 
-TOTAL = 20
-LIMIT_SEC = 7
-
-def build_pool(use_hira, use_kata, use_daku):
-    decks = []
-    if use_hira:
-        decks.append(HIRAGANA_BASE)
-        if use_daku:
-            decks.append(HIRAGANA_DAKUTEN)
-    if use_kata:
-        decks.append(KATAKANA_BASE)
-        if use_daku:
-            decks.append(KATAKANA_DAKUTEN)
-    pool = {}
-    for d in decks:
-        pool.update(d)
-    return pool  # dict: kana -> romaji
-
-def get_korean_pron(romaji: str) -> str:
-    # 단순화 매핑 (없으면 로마자 그대로 읽기)
-    return ROMA2HANGUL.get(romaji, romaji)
-
-def tts_bytes_korean(text: str) -> bytes:
-    # 캐시 사용 (중복 생성 방지)
-    cache = st.session_state.setdefault("audio_cache", {})
-    if text in cache:
-        return cache[text]
-    fp = BytesIO()
-    gTTS(text=text, lang="ko").write_to_fp(fp)
-    fp.seek(0)
-    data = fp.read()
-    cache[text] = data
-    return data
+# -----------------------------
+# 설정값
+# -----------------------------
+TOTAL = 20        # 카드 개수
+LIMIT_SEC = 7     # 카드당 표시 시간(초)
 
 # -----------------------------
-# Sidebar (Options)
+# 유틸: 로마자→(히라, 가타) 역매핑 테이블 만들기
+# -----------------------------
+def build_roma2kana():
+    r2k = {}
+    # 우선 히라/가타 기본 → 탁/반탁 순서로 채워 넣습니다.
+    for k, r in HIRAGANA_BASE.items():
+        r2k.setdefault(r, {})["hira"] = k
+    for k, r in KATAKANA_BASE.items():
+        r2k.setdefault(r, {})["kata"] = k
+    for k, r in HIRAGANA_DAKUTEN.items():
+        r2k.setdefault(r, {})["hira"] = k
+    for k, r in KATAKANA_DAKUTEN.items():
+        r2k.setdefault(r, {})["kata"] = k
+    # 일부 중복(예: 'o')은 최초 매핑을 우선합니다.
+    return r2k
+
+ROMA2KANA = build_roma2kana()
+
+# -----------------------------
+# 덱 구성: 한국어(한글) 발음 카드
+#   - 풀(히라/가타/탁음 포함 여부)에 따라 로마자 집합 선택
+#   - 카드 = { "kor": "아/카/시...", "hira": "か", "kata": "カ" }
+# -----------------------------
+def build_korean_cards(use_hira, use_kata, use_daku):
+    # 사용할 로마자 키 집합 만들기
+    pool = {}
+    if use_hira:
+        pool.update(HIRAGANA_BASE)
+        if use_daku:
+            pool.update(HIRAGANA_DAKUTEN)
+    if use_kata:
+        pool.update(KATAKANA_BASE)
+        if use_daku:
+            pool.update(KATAKANA_DAKUTEN)
+
+    # 로마자 목록(중복 제거)
+    romas = list(set(pool.values()))
+    random.shuffle(romas)
+
+    cards = []
+    for r in romas:
+        # 한국어 한글 표기 (없으면 로마자 그대로)
+        kor = ROMA2HANGUL.get(r, r)
+        hira = ROMA2KANA.get(r, {}).get("hira", "")
+        kata = ROMA2KANA.get(r, {}).get("kata", "")
+        cards.append({"kor": kor, "hira": hira, "kata": kata})
+
+    # 원하는 개수만큼 잘라서 리턴
+    return cards[:TOTAL]
+
+# -----------------------------
+# 사이드바 옵션
 # -----------------------------
 with st.sidebar:
     st.header("옵션")
-    mode = st.radio(
-        "모드 선택",
-        ["보기 모드 (자동 넘김)", "듣고-쓰기 모드 (한국어→가나)"],
-        index=0
-    )
-    use_hira = st.checkbox("히라가나", value=True)
-    use_kata = st.checkbox("가타카나", value=True)
+    use_hira = st.checkbox("히라가나 포함", value=True)
+    use_kata = st.checkbox("가타카나 포함", value=True)
     use_daku = st.checkbox("탁음/반탁음 포함", value=True)
+
+    show_answer = st.checkbox("정답(가나) 보기", value=False)
+    answer_script = st.selectbox("정답 표기 스크립트", ["히라가나", "가타카나", "둘 다"], index=0, disabled=not show_answer)
+
     st.caption(f"세션: 무작위 {TOTAL}문항 · 카드당 {LIMIT_SEC}초")
 
     if "started" not in st.session_state:
         st.session_state.started = False
 
-    # 시작 버튼
     if st.button("새 세션 시작하기", type="primary"):
-        pool = build_pool(use_hira, use_kata, use_daku)
-        if not pool:
-            st.error("히라가나 또는 가타카나를 선택하세요.")
+        # 카드 생성 (한국어 발음 중심)
+        cards = build_korean_cards(use_hira, use_kata, use_daku)
+        if not cards:
+            st.error("사용할 스크립트를 하나 이상 선택하세요.")
         else:
-            items = list(pool.items())  # (kana, romaji)
-            random.shuffle(items)
-            picked = items[:TOTAL]
-            if mode.startswith("보기"):
-                # 보기 모드: 표시 글자만
-                st.session_state.cards = [{"kana": k} for k, _ in picked]
-            else:
-                # 듣고-쓰기 모드: kana/romaji/kor_text 준비
-                st.session_state.cards = [
-                    {
-                        "kana": k,
-                        "romaji": v,
-                        "kor": get_korean_pron(v)  # 한국어 발음 텍스트
-                    }
-                    for k, v in picked
-                ]
+            st.session_state.cards = cards
             st.session_state.idx = 0
             st.session_state.started = True
-            st.session_state.mode = mode
             st.session_state.start_time = time.time()
-            # 듣고-쓰기 입력 상태 초기화
-            st.session_state.answer = ""
-            st.session_state.revealed = False  # 정답 공개 여부(듣고-쓰기만 사용)
+            st.session_state.show_answer = show_answer
+            st.session_state.answer_script = answer_script
+            # 콜백에서는 rerun 호출하지 않음
 
-st.title("장태순 여사님 전용 테스트")
+st.title("한국어 발음 플래시카드")
 
 if not st.session_state.get("started", False):
-    st.info("좌측 옵션 선택 후 **새 세션 시작하기**를 눌러주세요.")
+    st.info("사이드바에서 옵션을 설정하고 **새 세션 시작하기**를 눌러주세요.")
     st.stop()
 
 # -----------------------------
-# Helpers
+# 타이머/진행 유틸
 # -----------------------------
 def remaining_time():
     elapsed = int(time.time() - st.session_state.start_time)
@@ -169,21 +174,20 @@ def remaining_time():
 def go_next():
     st.session_state.idx += 1
     st.session_state.start_time = time.time()
-    st.session_state.answer = ""
-    st.session_state.revealed = False
 
 # -----------------------------
-# Main area
+# 메인
 # -----------------------------
 idx = st.session_state.idx
 cards = st.session_state.cards
-mode = st.session_state.mode
+show_answer = st.session_state.get("show_answer", False)
+answer_script = st.session_state.get("answer_script", "히라가나")
 
 # 종료 화면
 if idx >= len(cards):
     st.subheader("끝!")
     st.write(f"총 {TOTAL}개 완료했습니다.")
-    st.success("다시 하려면 사이드바에서 **새 세션 시작하기**를 눌러주세요.")
+    st.success("다시 하려면 사이드바에서 **새 세션 시작하기**를 누르세요.")
     st.stop()
 
 card = cards[idx]
@@ -197,74 +201,36 @@ with c2:
 
 st.markdown("---")
 
-# -----------------------------
-# MODE A: 보기 모드 (자동 넘김)
-# -----------------------------
-if mode.startswith("보기"):
-    # 7초가 지나면 자동 다음
-    if remaining_time() <= 0:
-        go_next()
-        st.rerun()
-
-    # 크게 표시
-    st.markdown(
-        f"<div style='text-align:center;font-size:140px;font-weight:800'>{card['kana']}</div>",
-        unsafe_allow_html=True
-    )
-
-    # 스킵 버튼 (콜백에서 rerun 사용 안 함)
-    st.button("다음 ▶", on_click=go_next)
-
-    st.markdown("---")
-    st.caption("입력 없이 7초마다 자동으로 다음 글자가 표시됩니다. 필요하면 '다음' 버튼으로 스킵하세요.")
-
-    # 초 단위 갱신
-    time.sleep(1)
+# 7초가 지나면 자동 다음
+if remaining_time() <= 0:
+    go_next()
     st.rerun()
 
-# -----------------------------
-# MODE B: 듣고-쓰기 모드 (한국어→가나)
-# -----------------------------
-else:
-    # 현재 카드용 한국어 음성 생성/재생
-    kor_text = card["kor"]  # 예: '카', '시', '쓰' 등
-    audio_bytes = tts_bytes_korean(kor_text)
-    st.audio(audio_bytes, format="audio/mp3", start_time=0)
-    st.caption(f"한국어 발음: **{kor_text}**")
+# 한국어 발음(한글) 크게 표시
+st.markdown(
+    f"<div style='text-align:center;font-size:140px;font-weight:800'>{card['kor']}</div>",
+    unsafe_allow_html=True
+)
 
-    # 입력창 (가나로 입력)
-    st.session_state.answer = st.text_input("가나로 적기 (예: か / カ)", value=st.session_state.answer)
-
-    # 제출 버튼: 판정만, rerun은 메인에서
-    def check_answer():
-        user = (st.session_state.answer or "").strip()
-        correct = card["kana"]
-        st.session_state.revealed = True
-        st.session_state.is_correct = (user == correct)
-
-    cols = st.columns([1,1,1])
-    with cols[0]:
-        st.button("재생", on_click=lambda: None)  # 플레이어는 위에 이미 있음(수동 컨트롤 가능)
-    with cols[1]:
-        st.button("제출", on_click=check_answer)
-    with cols[2]:
-        st.button("스킵 ▶", on_click=go_next)
-
-    # 판정/정답 표시
-    if st.session_state.revealed:
-        if st.session_state.is_correct:
-            st.success(f"정답!  {card['kana']}")
-        else:
-            st.error(f"오답!  정답: {card['kana']}")
-        # 1초 후 자동 다음
-        time.sleep(1)
-        go_next()
-        st.rerun()
+# (선택) 정답 가나 표시
+if show_answer:
+    ans = ""
+    if answer_script == "히라가나":
+        ans = card["hira"] or "(히라가나 없음)"
+    elif answer_script == "가타카나":
+        ans = card["kata"] or "(가타카나 없음)"
     else:
-        # 타임아웃 시 자동 다음 (정답 공개 없이)
-        if remaining_time() <= 0:
-            go_next()
-            st.rerun()
-        # 초 단위 UI 갱신
-        time.sleep(1)
-        st.rerun()
+        hira = card["hira"] or "—"
+        kata = card["kata"] or "—"
+        ans = f"{hira} / {kata}"
+    st.info(f"정답: {ans}")
+
+# 즉시 스킵 버튼 (콜백에서 rerun 사용 안 함)
+st.button("다음 ▶", on_click=go_next)
+
+st.markdown("---")
+st.caption("입력 없이 7초마다 자동으로 다음 카드로 넘어갑니다. 필요하면 '다음 ▶'으로 스킵하세요.")
+
+# 초 단위 자동 갱신 (메인 플로우에서만 호출)
+time.sleep(1)
+st.rerun()
