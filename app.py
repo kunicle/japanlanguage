@@ -9,6 +9,47 @@ import random
 import base64
 from pathlib import Path
 import streamlit as st
+import base64
+from pathlib import Path
+
+CLICK_WAV_PATHS = ["click.wav", "assets/click.wav"]
+
+@st.cache_resource(show_spinner=False)
+def _load_click_b64():
+    for p in CLICK_WAV_PATHS:
+        fp = Path(p)
+        if fp.exists() and fp.is_file():
+            return base64.b64encode(fp.read_bytes()).decode("ascii")
+    return None
+
+def play_click_if_needed():
+    # 자동 넘김 직후 1회만 재생
+    if st.session_state.get("play_click", False):
+        st.session_state.play_click = False
+        b64 = _load_click_b64()
+        if not b64:
+            return
+        # 오토플레이가 막히는 경우를 대비해, 사용자 제스처 이후에는 JS로 강제 play()
+        st.markdown(
+            f"""
+            <audio id="clickAudio" autoplay>
+              <source src="data:audio/wav;base64,{b64}" type="audio/wav">
+            </audio>
+            <script>
+              (function(){{
+                const a = document.getElementById('clickAudio');
+                if (!a) return;
+                const tryPlay = () => a.play().catch(()=>{});
+                // 이미 제스처가 있었다면 즉시 재생 시도
+                if (window._userGesture) tryPlay();
+                // 다음 사용자 제스처에서 확실히 재생
+                const once = () => {{ window._userGesture = true; tryPlay(); window.removeEventListener('pointerdown', once, true); }};
+                window.addEventListener('pointerdown', once, true);
+              }})();
+            </script>
+            """,
+            unsafe_allow_html=True,
+        )
 
 st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🇯🇵", layout="centered")
 
