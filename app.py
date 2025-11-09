@@ -175,12 +175,31 @@ with st.sidebar:
                 st.session_state.mode = mode
                 st.session_state.start_time = time.time()
                 st.session_state.skip = False
+                st.session_state.close_sidebar = True
                 st.rerun()
 
 st.markdown(
     "<div style='text-align:center;font-size:28px;font-weight:800;'>장태순 여사님 일본어 테스트</div>",
     unsafe_allow_html=True,
 )
+
+# 세션 시작 시 사이드바 자동 닫기
+if st.session_state.get("started", False) and st.session_state.get("close_sidebar", False):
+    st.session_state.close_sidebar = False
+    st.markdown(
+        """
+        <script>
+            setTimeout(() => {
+                const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
+                const collapseBtn = window.parent.document.querySelector('[data-testid="collapsedControl"]');
+                if (sidebar && sidebar.getAttribute('aria-expanded') === 'true' && collapseBtn) {
+                    collapseBtn.click();
+                }
+            }, 100);
+        </script>
+        """,
+        unsafe_allow_html=True
+    )
 
 if not st.session_state.get("started", False):
     # 홈 이미지가 있으면 보여주기 (선택)
