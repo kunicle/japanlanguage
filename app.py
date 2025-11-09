@@ -188,12 +188,19 @@ if st.session_state.get("started", False) and st.session_state.get("close_sideba
     st.session_state.close_sidebar = False
     st.markdown(
         """
+        <style>
+        [data-testid="stSidebar"] {
+            margin-left: -21rem;
+        }
+        [data-testid="stSidebar"][aria-expanded="true"] {
+            margin-left: 0rem;
+        }
+        </style>
         <script>
             setTimeout(() => {
                 const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-                const collapseBtn = window.parent.document.querySelector('[data-testid="collapsedControl"]');
-                if (sidebar && sidebar.getAttribute('aria-expanded') === 'true' && collapseBtn) {
-                    collapseBtn.click();
+                if (sidebar) {
+                    sidebar.style.marginLeft = '-21rem';
                 }
             }, 100);
         </script>
