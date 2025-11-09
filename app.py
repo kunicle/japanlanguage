@@ -183,48 +183,30 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# 세션 시작 시 사이드바 강제로 닫기
-if st.session_state.get("close_sidebar", False):
+# 세션 시작 시 사이드바 자동 닫기
+if st.session_state.get("started", False) and st.session_state.get("close_sidebar", False):
+    st.session_state.close_sidebar = False
     st.markdown(
         """
+        <style>
+        [data-testid="stSidebar"] {
+            margin-left: -21rem;
+        }
+        [data-testid="stSidebar"][aria-expanded="true"] {
+            margin-left: 0rem;
+        }
+        </style>
         <script>
-            function closeSidebar() {
-                const parentDoc = window.parent.document;
-                
-                // 방법 1: collapse 버튼 찾아서 클릭
-                const collapseBtn = parentDoc.querySelector('[kind="header"]');
-                if (collapseBtn && collapseBtn.querySelector('button')) {
-                    collapseBtn.querySelector('button').click();
-                    return;
-                }
-                
-                // 방법 2: data-testid로 찾기
-                const buttons = parentDoc.querySelectorAll('button');
-                for (let btn of buttons) {
-                    if (btn.getAttribute('aria-label')?.includes('Close') || 
-                        btn.getAttribute('aria-label')?.includes('Collapse')) {
-                        btn.click();
-                        return;
-                    }
-                }
-                
-                // 방법 3: 사이드바를 직접 숨김
-                const sidebar = parentDoc.querySelector('[data-testid="stSidebar"]');
+            setTimeout(() => {
+                const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
                 if (sidebar) {
-                    sidebar.style.transform = 'translateX(-100%)';
-                    sidebar.style.transition = 'transform 0.3s ease';
+                    sidebar.style.marginLeft = '-21rem';
                 }
-            }
-            
-            // 여러 번 시도
-            setTimeout(closeSidebar, 100);
-            setTimeout(closeSidebar, 300);
-            setTimeout(closeSidebar, 500);
+            }, 100);
         </script>
         """,
         unsafe_allow_html=True
     )
-    st.session_state.close_sidebar = False
 
 if not st.session_state.get("started", False):
     # 홈 이미지가 있으면 보여주기 (선택)
