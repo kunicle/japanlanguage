@@ -3,6 +3,7 @@
 # - 자동 넘김: 남은 시간이 0이 되면 다음 카드로
 # - 모드 1) 가나 보기(자동)  2) 한국어 보기(라벨만 표시)
 # - 콜백 내부에는 st.rerun() 호출하지 않음
+# - 카드 넘김 시 click.wav 사운드 재생
 
 import time
 import random
@@ -115,9 +116,25 @@ def build_korean_cards(use_hira, use_kata, use_daku):
 def remaining_time():
     return max(0, LIMIT_SEC - int(time.time() - st.session_state.start_time))
 
+def play_sound_if_needed():
+    """카드 넘김 시 사운드 재생"""
+    if st.session_state.get("play_sound", False):
+        st.session_state.play_sound = False
+        sound_file = Path("click.wav")
+        if sound_file.exists():
+            audio_bytes = sound_file.read_bytes()
+            audio_b64 = base64.b64encode(audio_bytes).decode()
+            audio_html = f"""
+                <audio autoplay>
+                    <source src="data:audio/wav;base64,{audio_b64}" type="audio/wav">
+                </audio>
+            """
+            st.markdown(audio_html, unsafe_allow_html=True)
+
 def go_next():
     st.session_state.idx += 1
     st.session_state.start_time = time.time()
+    st.session_state.play_sound = True
 
 # ===== 사이드바 =====
 with st.sidebar:
@@ -184,6 +201,9 @@ c1, c2 = st.columns([1,1])
 with c1: st.markdown(f"**문항 {idx+1}/{TOTAL}**")
 with c2: st.markdown(f"**남은 시간: {remaining_time()}s**")
 st.markdown("---")
+
+# 사운드 재생
+play_sound_if_needed()
 
 # 시간 만료 시 자동 다음
 if remaining_time() <= 0:
