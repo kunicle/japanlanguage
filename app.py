@@ -151,32 +151,31 @@ with st.sidebar:
         if st.button("테스트 중단하기", type="secondary"):
             st.session_state.started = False
             st.rerun()
-        st.stop()
-    
-    mode = st.radio("모드 선택", ["가나 보기(자동 넘김)", "한국어 보기(라벨만 표시)"], index=0)
-    use_hira = st.checkbox("히라가나 포함", value=True)
-    use_kata = st.checkbox("가타카나 포함", value=True)
-    use_daku = st.checkbox("탁음/반탁음 포함", value=True)
-    st.caption(f"세션: 무작위 {TOTAL}문항 · 카드당 {LIMIT_SEC}초")
+    else:
+        mode = st.radio("모드 선택", ["가나 보기(자동 넘김)", "한국어 보기(라벨만 표시)"], index=0)
+        use_hira = st.checkbox("히라가나 포함", value=True)
+        use_kata = st.checkbox("가타카나 포함", value=True)
+        use_daku = st.checkbox("탁음/반탁음 포함", value=True)
+        st.caption(f"세션: 무작위 {TOTAL}문항 · 카드당 {LIMIT_SEC}초")
 
-    if "started" not in st.session_state:
-        st.session_state.started = False
+        if "started" not in st.session_state:
+            st.session_state.started = False
 
-    if st.button("새 세션 시작하기", type="primary"):
-        if mode.startswith("가나"):
-            cards = build_kana_cards(use_hira, use_kata, use_daku)
-        else:
-            cards = build_korean_cards(use_hira, use_kata, use_daku)
-        if not cards:
-            st.error("사용 가능한 카드가 없습니다. 옵션을 조정해 보세요.")
-        else:
-            st.session_state.cards = cards
-            st.session_state.idx = 0
-            st.session_state.started = True
-            st.session_state.mode = mode
-            st.session_state.start_time = time.time()
-            st.session_state.skip = False
-            st.rerun()
+        if st.button("새 세션 시작하기", type="primary"):
+            if mode.startswith("가나"):
+                cards = build_kana_cards(use_hira, use_kata, use_daku)
+            else:
+                cards = build_korean_cards(use_hira, use_kata, use_daku)
+            if not cards:
+                st.error("사용 가능한 카드가 없습니다. 옵션을 조정해 보세요.")
+            else:
+                st.session_state.cards = cards
+                st.session_state.idx = 0
+                st.session_state.started = True
+                st.session_state.mode = mode
+                st.session_state.start_time = time.time()
+                st.session_state.skip = False
+                st.rerun()
 
 st.markdown(
     "<div style='text-align:center;font-size:28px;font-weight:800;'>장태순 여사님 일본어 테스트</div>",
@@ -235,7 +234,7 @@ if mode.startswith("가나"):
 else:
     card = cards[idx]
     st.markdown(f"<div style='text-align:center;font-size:220px;font-weight:900'>{card['kor']}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div style='text-align:center;color:#666'>( {card['label']} )</div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='text-align:center;font-size:32px;color:#666;margin-top:20px'>( {card['label']} )</div>", unsafe_allow_html=True)
 
 # 스킵 버튼 (콜백 내부 rerun 없음)
 def _skip():
