@@ -192,8 +192,12 @@ mode = st.session_state.mode
 
 # 종료 화면
 if idx >= len(cards):
-    st.subheader("끝!")
-    st.write(f"총 {TOTAL}개 완료했습니다.")
+    st.success("끝")
+    st.subheader(f"총 {TOTAL}개 문제를 완료했습니다.")
+    st.markdown("---")
+    if st.button("처음으로 돌아가기", type="primary", use_container_width=True):
+        st.session_state.started = False
+        st.rerun()
     st.stop()
 
 # 상단: 진행/타이머
@@ -229,9 +233,6 @@ if st.session_state.get("skip"):
     st.session_state.skip = False
     go_next()
     st.rerun()
-
-st.markdown("---")
-st.caption("7초마다 자동으로 다음 카드로 넘어갑니다. 필요하면 '다음 ▶'으로 스킵하세요.")
 
 # 1초마다 화면 갱신 (콜백 바깥에서만 호출)
 time.sleep(1)
