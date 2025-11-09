@@ -1,6 +1,6 @@
-# app.py — 최종본 (Safari 호환)
-# - 블로킹 sleep 제거, 자동 넘김은 JS setTimeout
-# - 콜백 내부 st.rerun() 사용 안 함
+# app.py — 최종본 (Safari 호환 + 실시간 타이머)
+# - sleep() 제거, 자동 넘김은 JS setTimeout
+# - 콜백 내부 st.rerun() 사용 안 함 (no-op 경고 제거)
 # - 제목 클릭 → 초기화(옵션 화면), 홈 사진은 data URL 렌더링
 # - 모드: 1) 가나 보기(자동)  2) 한국어 보기(라벨만, 자동)
 # - 카드 전환 시 click.wav 재생(브라우저 정책상 첫 상호작용 후 재생될 수 있음)
@@ -245,10 +245,34 @@ idx   = st.session_state.idx
 cards = st.session_state.cards
 mode  = st.session_state.mode
 
-# 상단 표시
+# 상단 표시(타이머는 JS로 250ms마다 갱신)
 c1, c2 = st.columns([1,1])
-with c1: st.markdown(f"**문항 {idx+1}/{TOTAL}**")
-with c2: st.markdown(f"**남은 시간: {remaining_time()}s**")
+with c1:
+    st.markdown(f"**문항 {idx+1}/{TOTAL}**")
+with c2:
+    st.markdown(
+        f"""
+        <div style="text-align:right; font-weight:600">
+          남은 시간: <span id="timer">{remaining_time()}</span>s
+        </div>
+        <script>
+          (function(){{
+            const startMs = {int(st.session_state.start_time * 1000)};
+            const limitMs = {LIMIT_SEC} * 1000;
+            const el = document.getElementById('timer');
+            function tick(){{
+              const now = Date.now();
+              let remain = Math.max(0, Math.ceil((startMs + limitMs - now) / 1000));
+              if (el) el.textContent = String(remain);
+            }}
+            tick();
+            if (window._kanaTimer) clearInterval(window._kanaTimer);
+            window._kanaTimer = setInterval(tick, 250);
+          }})();
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
 st.markdown("---")
 
 # 전환 사운드
@@ -274,7 +298,7 @@ else:
     st.markdown(f"<div style='text-align:center;font-size:{FONT_PX}px;font-weight:900'>{kor}</div>", unsafe_allow_html=True)
     st.markdown(f"<div style='text-align:center;font-size:22px;color:#666'>( {label} )</div>", unsafe_allow_html=True)
 
-# 수동 스킵(콜백 rerun 없음: 반환값으로 처리)
+# 수동 스킵(콜백 내부 rerun 사용 안 함)
 if st.button("다음 ▶", use_container_width=True):
     go_next()
     st.rerun()
@@ -283,8 +307,7 @@ st.markdown("---")
 st.caption("7초마다 자동으로 다음 카드로 넘어갑니다. 필요하면 '다음 ▶'으로 스킵하세요.")
 
 # ----------------- 자동 넘김(JS setTimeout) -----------------
-sec_left = max(0.0, st.session_state.start_time + LIMIT_SEC - time.time())
-ms_left  = int(sec_left * 1000)
+ms_left = int(max(0.0, (st.session_state.start_time + LIMIT_SEC) - time.time()) * 1000)
 if ms_left < 100:
     ms_left = LIMIT_SEC * 1000
 
@@ -294,7 +317,8 @@ st.markdown(
       (function(){{
         const usp = new URLSearchParams(window.location.search);
         if (!usp.has('advance')) {{
-          setTimeout(function(){{
+          if (window._advTimer) clearTimeout(window._advTimer);
+          window._advTimer = setTimeout(function(){{
             usp.set('advance','1');
             window.location.search = '?' + usp.toString();
           }}, {ms_left});
