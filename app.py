@@ -15,12 +15,10 @@ HIRAGANA_BASE = {
     "な":"na","に":"ni","ぬ":"nu","ね":"ne","の":"no",
     "は":"ha","ひ":"hi","ふ":"fu","へ":"he","ほ":"ho",
     "ま":"ma","み":"mi","む":"mu","め":"me","も":"mo",
-    "야":"ya","ゆ":"yu","よ":"yo",
+    "や":"ya","ゆ":"yu","よ":"yo",
     "ら":"ra","り":"ri","る":"ru","れ":"re","ろ":"ro",
     "わ":"wa","を":"o","ん":"n",
 }
-# '야' was a mistake; fix to 'や'
-HIRAGANA_BASE["や"]="ya"
 
 KATAKANA_BASE = {
     "ア":"a","イ":"i","ウ":"u","エ":"e","オ":"o",
@@ -50,8 +48,8 @@ KATAKANA_DAKUTEN = {
     "パ":"pa","ピ":"pi","プ":"pu","ペ":"pe","ポ":"po",
 }
 
-TOTAL = 20
-LIMIT_SEC = 7
+TOTAL = 20           # 세션 길이
+LIMIT_SEC = 7        # 글자당 표시 시간(초)
 
 def build_pool(use_hira, use_kata, use_daku):
     decks = []
@@ -89,12 +87,11 @@ with st.sidebar:
             items = list(pool.items())
             random.shuffle(items)
             picked = items[:TOTAL]
-            # 카드에는 '표시할 글자(kana)'만 저장 (정답 표시는 안 함)
-            st.session_state.cards = [{"kana": k} for k, _ in picked]
+            st.session_state.cards = [{"kana": k} for k, _ in picked]  # 표시할 글자만 저장
             st.session_state.idx = 0
             st.session_state.started = True
-            st.session_state.start_time = time.time()
-            st.rerun()
+            st.session_state.start_time = time.time()  # 현재 카드 시작시간
+            # 콜백에서는 rerun 호출하지 않음 (no-op)
 
 st.title("장태순 여사님 전용 테스트")
 
@@ -119,7 +116,7 @@ def go_next():
 idx = st.session_state.idx
 cards = st.session_state.cards
 
-# End screen
+# 종료 화면
 if idx >= len(cards):
     st.subheader("끝!")
     st.write(f"총 {TOTAL}개 완료했습니다.")
@@ -128,27 +125,31 @@ if idx >= len(cards):
 
 card = cards[idx]
 
-# 상단 정보
+# 상단: 진행/타이머
 c1, c2 = st.columns([1,1])
 with c1:
     st.markdown(f"**문항 {idx+1}/{TOTAL}**")
 with c2:
     st.markdown(f"**남은 시간: {remaining_time()}s**")
 
-# 7초가 지나면 자동 다음
+st.markdown("---")
+st.markdown(
+    f"<div style='text-align:center;font-size:140px;font-weight:800'>{card['kana']}</div>",
+    unsafe_allow_html=True,
+)
+
+# 즉시 넘기기: 상태만 변경 (콜백 내 rerun 금지)
+st.button("다음 ▶", on_click=go_next)
+
+st.markdown("---")
+st.caption("입력 없이 7초마다 자동으로 다음 글자가 표시됩니다. 필요하면 '다음' 버튼으로 스킵하세요.")
+
+# ----- 자동 카운트다운 처리 -----
+# 1) 시간이 끝났으면 다음 카드로 진행
 if remaining_time() <= 0:
     go_next()
     st.rerun()
 
-st.markdown("---")
-# 글자 크게 표시
-st.markdown(
-    f"<div style='text-align:center;font-size:140px;font-weight:800'>{card['kana']}</div>",
-    unsafe_allow_html=True
-)
-
-# 즉시 넘기기 버튼
-st.button("다음 ▶", on_click=lambda: (go_next(), st.rerun()))
-
-st.markdown("---")
-st.caption("입력 없이 7초마다 자동으로 다음 글자가 표시됩니다. 필요하면 '다음' 버튼으로 스킵하세요.")
+# 2) 아직 시간이 남아있으면 1초 후 자동 갱신 (메인 흐름에서만 rerun)
+time.sleep(1)
+st.rerun()
