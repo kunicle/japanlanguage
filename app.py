@@ -1,4 +1,4 @@
-# app.py — 두 모드 + 사운드 + 사이드바 숨기기 + 큰 글씨/슬라이더
+# app.py — 두 모드 + 철컥 사운드 + 사이드바 숨기기 + 큰 글씨(고정 220px)
 # 1) 가나 보기(자동 넘김, 입력 없음)
 # 2) 한국어 보기(한글 발음 + "(히라가나/가타카나)" 라벨만, 자동 넘김)
 # Streamlit 1.39: 콜백 내부 st.rerun() 사용하지 않고, 메인 흐름 끝에서만 호출
@@ -6,32 +6,47 @@
 import time
 import random
 import base64
+from pathlib import Path
 import streamlit as st
 
 st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🇯🇵", layout="centered")
 
 # ────────────────────────────────────────────────────────────────────────────
-# 작은 '철컥' 클릭 사운드 (mp3, 아주 짧은 샘플을 base64로 내장)
-# iOS/모바일은 사용자 상호작용 후에만 자동 재생이 허용될 수 있음
+# 고정 표시 크기/타이밍
 # ────────────────────────────────────────────────────────────────────────────
-CLICK_MP3_B64 = (
-    "SUQzAwAAAAAAQ1JFQU1FAAAAAP//7QAAACQAAAACAAACAAACAAACAAAAAAD//8AAACQAAABAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAA"  # (매우 짧은 클릭 사운드의 더미 베이스64; 실제 환경에선 원하는 mp3로 교체 가능)
-)
+FONT_PX = 220   # 카드 글자 크기 (고정, iPad 가로보기 기준 큼직하게)
+TOTAL   = 20    # 카드 개수
+LIMIT_SEC = 7   # 카드당 시간(초)
+
+# ────────────────────────────────────────────────────────────────────────────
+# 철컥 사운드: 저장소 루트에 click.wav 업로드해 사용 (짧은 효과음 권장)
+#   - iPad/Safari는 사용자 상호작용 후에만 자동재생 허용 → 아래 체크박스 한 번 눌러 주세요.
+# ────────────────────────────────────────────────────────────────────────────
+CLICK_WAV_PATHS = ["click.wav", "assets/click.wav"]  # 선호 경로들
+
+@st.cache_resource(show_spinner=False)
+def _load_click_b64():
+    for p in CLICK_WAV_PATHS:
+        fp = Path(p)
+        if fp.exists() and fp.is_file():
+            data = fp.read_bytes()
+            return base64.b64encode(data).decode("ascii")
+    return None  # 파일이 없으면 None
+
 def play_click_if_needed():
+    # 다음 카드로 넘어갈 때만 1회 재생
     if st.session_state.get("play_click", False) and st.session_state.get("sound_enabled", False):
         st.session_state.play_click = False
-        src = f"data:audio/mp3;base64,{CLICK_MP3_B64}"
-        # iOS에서 자동재생은 사용자 상호작용이 있었을 때만 가능
-        st.markdown(
-            f"""
-            <audio autoplay>
-              <source src="{src}" type="audio/mpeg">
-            </audio>
-            """,
-            unsafe_allow_html=True,
-        )
+        b64 = _load_click_b64()
+        if b64:  # 파일이 있으면 시도
+            st.markdown(
+                f"""
+                <audio autoplay>
+                  <source src="data:audio/wav;base64,{b64}" type="audio/wav">
+                </audio>
+                """,
+                unsafe_allow_html=True,
+            )
 
 # ────────────────────────────────────────────────────────────────────────────
 # 데이터
@@ -46,8 +61,10 @@ HIRAGANA_BASE = {
     "ま":"ma","み":"mi","む":"mu","め":"me","も":"mo",
     "や":"ya","ゆ":"yu","よ":"yo",
     "ら":"ra","り":"ri","る":"ru","れ":"re","ろ":"ro",
-    "わ":"wa","を":"o","ん":"n",
+    "わ":"wa","를":"o","ん":"n",  # 오타 방지용: 아래 줄에서 '를' 수정
 }
+HIRAGANA_BASE["を"] = "o"  # 위 라인 오타 정정
+
 KATAKANA_BASE = {
     "ア":"a","イ":"i","ウ":"u","エ":"e","オ":"o",
     "カ":"ka","キ":"ki","ク":"ku","ケ":"ke","コ":"ko",
@@ -92,9 +109,6 @@ ROMA2HANGUL = {
     "ba":"바","bi":"비","bu":"부","be":"베","bo":"보",
     "pa":"파","pi":"피","pu":"푸","pe":"페","po":"포",
 }
-
-TOTAL = 20
-LIMIT_SEC = 7
 
 # ────────────────────────────────────────────────────────────────────────────
 # 역매핑: romaji -> {"hira":kana?, "kata":kana?}
@@ -149,9 +163,10 @@ def build_korean_cards(use_hira, use_kata, use_daku):
             enabled.append("kata")
         if not enabled:
             continue
-        target = random.choice(enabled) if len(enabled) > 1 else enabled[0]
-        label = "히라가나" if target == "hira" else "가타카나"
-        cards.append({"kor": kor, "label": label, "hira": hira, "kata": kata})
+        target_label = "히라가나" if "hira" in enabled and (len(enabled) == 1) else (
+            "가타카나" if "kata" in enabled and (len(enabled) == 1) else random.choice(["히라가나","가타카나"])
+        )
+        cards.append({"kor": kor, "label": target_label, "hira": hira, "kata": kata})
         if len(cards) >= TOTAL:
             break
     return cards
@@ -169,27 +184,23 @@ if "play_click" not in st.session_state:
     st.session_state.play_click = False
 
 # ────────────────────────────────────────────────────────────────────────────
-# 상단 컨트롤 바 (사운드/폰트크기/사이드바 토글)
+# 상단 간단 컨트롤: 사운드 토글 / 사이드바 토글
 # ────────────────────────────────────────────────────────────────────────────
-with st.container():
-    c1, c2, c3 = st.columns([1,1,1])
-    with c1:
-        font_size = st.slider("글꼴 크기", 120, 260, 190, step=10, help="카드 글자 크기")
-    with c2:
-        st.checkbox("🔊 사운드 활성화", value=st.session_state.sound_enabled,
-                    key="sound_enabled", help="iPad/iOS에서는 한 번 체크(터치)해야 자동 재생 가능")
-    with c3:
-        def toggle_sidebar():
-            st.session_state.fullscreen = not st.session_state.fullscreen
-        label = "사이드바 숨기기" if not st.session_state.fullscreen else "사이드바 보이기"
-        st.button(label, on_click=toggle_sidebar)
+top_c1, top_c2 = st.columns([1,1])
+with top_c1:
+    st.checkbox("🔊 사운드 활성화 (iPad는 한 번 눌러주세요)", key="sound_enabled")
+with top_c2:
+    def toggle_sidebar():
+        st.session_state.fullscreen = not st.session_state.fullscreen
+    label = "사이드바 숨기기" if not st.session_state.fullscreen else "사이드바 보이기"
+    st.button(label, on_click=toggle_sidebar)
 
-# 사이드바 표시/숨김 CSS
+# 사이드바 숨김 CSS
 if st.session_state.fullscreen:
     st.markdown("""
         <style>
         [data-testid="stSidebar"] {display: none;}
-        .block-container {padding-top: 1rem;}
+        .block-container {padding-top: 0.5rem;}
         </style>
     """, unsafe_allow_html=True)
 
@@ -232,10 +243,9 @@ def remaining_time():
     return max(0, LIMIT_SEC - elapsed)
 
 def go_next():
-    # 다음 카드로 진행 + 클릭 사운드 플래그
     st.session_state.idx += 1
     st.session_state.start_time = time.time()
-    st.session_state.play_click = True  # 다음 렌더에서 재생
+    st.session_state.play_click = True  # 다음 렌더에서 철컥 재생
 
 # 상태 단축
 idx = st.session_state.idx
@@ -265,13 +275,12 @@ play_click_if_needed()
 if mode.startswith("가나"):
     kana = cards[idx]["kana"]
 
-    # 시간 초과 시 자동 다음
     if remaining_time() <= 0:
         go_next()
         st.rerun()
 
     st.markdown(
-        f"<div style='text-align:center;font-size:{font_size}px;font-weight:900'>{kana}</div>",
+        f"<div style='text-align:center;font-size:{FONT_PX}px;font-weight:900'>{kana}</div>",
         unsafe_allow_html=True
     )
 
@@ -287,14 +296,14 @@ if mode.startswith("가나"):
 else:
     card = cards[idx]
     kor = card["kor"]
-    label = card["label"]  # "히라가나" or "가타카나"
+    label = card["label"]
 
     if remaining_time() <= 0:
         go_next()
         st.rerun()
 
     st.markdown(
-        f"<div style='text-align:center;font-size:{font_size}px;font-weight:900'>{kor}</div>",
+        f"<div style='text-align:center;font-size:{FONT_PX}px;font-weight:900'>{kor}</div>",
         unsafe_allow_html=True
     )
     st.markdown(
