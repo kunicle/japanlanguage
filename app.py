@@ -1,14 +1,13 @@
-# app.py — 두 모드 지원:
+# app.py — 두 모드
 # 1) 가나 보기(자동 넘김, 입력 없음)
-# 2) 한국어 보기(한글 발음 표시 + "히라가나/가타카나?" 퀴즈)
-# Streamlit 1.39 기준: 콜백 안에서는 st.rerun() 호출하지 않고
-# 메인 흐름 말미에서만 주기적으로 st.rerun() 호출합니다.
+# 2) 한국어 보기(한글 발음 + "(히라가나/가타카나)" 라벨만 표시, 자동 넘김)
+# Streamlit 1.39: 콜백 내부에서 st.rerun() 사용하지 않음
 
 import time
 import random
 import streamlit as st
 
-st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🀄", layout="centered")
+st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🇯🇵", layout="centered")
 
 # -----------------------------
 # Kana Data (기본 + 탁/반탁음)
@@ -114,7 +113,7 @@ def build_kana_cards(use_hira, use_kata, use_daku):
     return [{"kana": k} for k in items[:TOTAL]]
 
 def build_korean_cards(use_hira, use_kata, use_daku):
-    # 한국어 보기 모드: 한글 발음 + 타겟 스크립트(히라/가타) 퀴즈
+    # 한국어 보기 모드: 한글 발음 + "(히라가나/가타카나)" 라벨만 표시
     d = build_pool_dict(use_hira, use_kata, use_daku)  # kana->romaji
     romas = list(set(d.values()))
     random.shuffle(romas)
@@ -123,7 +122,6 @@ def build_korean_cards(use_hira, use_kata, use_daku):
         kor = ROMA2HANGUL.get(r, r)
         hira = ROMA2KANA.get(r, {}).get("hira", "")
         kata = ROMA2KANA.get(r, {}).get("kata", "")
-        # 사용자가 선택한 스크립트 중에서 타겟을 랜덤 지정
         enabled = []
         if use_hira and hira:
             enabled.append("hira")
@@ -132,7 +130,14 @@ def build_korean_cards(use_hira, use_kata, use_daku):
         if not enabled:
             continue
         target = random.choice(enabled) if len(enabled) > 1 else enabled[0]
-        cards.append({"kor": kor, "hira": hira, "kata": kata, "target": target})
+        label = "히라가나" if target == "hira" else "가타카나"
+        cards.append({
+            "kor": kor,         # 크게 보여줄 한글 발음
+            "label": label,     # (히라가나/가타카나) 라벨만
+            # 참고용으로 실제 표기가 필요하면 아래 두 값을 사용 가능
+            "hira": hira,
+            "kata": kata,
+        })
         if len(cards) >= TOTAL:
             break
     return cards
@@ -142,7 +147,7 @@ def build_korean_cards(use_hira, use_kata, use_daku):
 # -----------------------------
 with st.sidebar:
     st.header("옵션")
-    mode = st.radio("모드 선택", ["가나 보기(자동 넘김)", "한국어 보기(스크립트 맞추기)"], index=0)
+    mode = st.radio("모드 선택", ["가나 보기(자동 넘김)", "한국어 보기(라벨만 표시)"], index=0)
     use_hira = st.checkbox("히라가나 포함", value=True)
     use_kata = st.checkbox("가타카나 포함", value=True)
     use_daku = st.checkbox("탁음/반탁음 포함", value=True)
@@ -164,13 +169,7 @@ with st.sidebar:
             st.session_state.idx = 0
             st.session_state.started = True
             st.session_state.mode = mode
-            st.session_state.use_hira = use_hira
-            st.session_state.use_kata = use_kata
             st.session_state.start_time = time.time()
-            # 한국어 모드용 상태
-            st.session_state.answered = False
-            st.session_state.is_correct = False
-            st.session_state.last_choice = None
 
 st.title("장태순 여사님 일본어 테스트")
 
@@ -188,9 +187,6 @@ def remaining_time():
 def go_next():
     st.session_state.idx += 1
     st.session_state.start_time = time.time()
-    st.session_state.answered = False
-    st.session_state.is_correct = False
-    st.session_state.last_choice = None
 
 idx = st.session_state.idx
 cards = st.session_state.cards
@@ -236,18 +232,18 @@ if mode.startswith("가나"):
     st.rerun()
 
 # -----------------------------
-# 모드 B: 한국어 보기(스크립트 맞추기)
-#   - 한국어(한글) 발음 표시
-#   - 아래에 "히라가나 / 가타카나?" 퀴즈 버튼
-#   - 정답/오답 1초 표시 후 자동 다음
+# 모드 B: 한국어 보기(라벨만 표시)
+#   - 한국어(한글) 발음 크게 표시
+#   - 그 아래 작은 글씨로 (히라가나) 또는 (가타카나) 라벨만 보여줌
+#   - 7초 자동 넘김 + 스킵 버튼
 # -----------------------------
 else:
     card = cards[idx]
     kor = card["kor"]
-    target = card["target"]  # "hira" or "kata"
+    label = card["label"]  # "히라가나" or "가타카나"
 
-    # 시간 초과 시(무응답) 자동 다음
-    if remaining_time() <= 0 and not st.session_state.answered:
+    # 시간 초과 시 자동 다음
+    if remaining_time() <= 0:
         go_next()
         st.rerun()
 
@@ -255,41 +251,15 @@ else:
         f"<div style='text-align:center;font-size:140px;font-weight:800'>{kor}</div>",
         unsafe_allow_html=True
     )
+    st.markdown(
+        f"<div style='text-align:center;font-size:22px;color:#666'>( {label} )</div>",
+        unsafe_allow_html=True
+    )
 
-    st.write("**이 발음에 해당하는 표기는 무엇일까요?**")
-    cols = st.columns(2)
+    st.button("다음 ▶", on_click=go_next)
 
-    def choose_hira():
-        st.session_state.answered = True
-        st.session_state.last_choice = "hira"
-        st.session_state.is_correct = (target == "hira")
+    st.markdown("---")
+    st.caption("7초마다 자동으로 다음 카드로 넘어갑니다. 필요하면 '다음 ▶'으로 스킵하세요.")
 
-    def choose_kata():
-        st.session_state.answered = True
-        st.session_state.last_choice = "kata"
-        st.session_state.is_correct = (target == "kata")
-
-    with cols[0]:
-        st.button("히라가나", on_click=choose_hira, disabled=st.session_state.answered)
-    with cols[1]:
-        st.button("가타카나", on_click=choose_kata, disabled=st.session_state.answered)
-
-    if st.session_state.answered:
-        # 정답 또는 오답 피드백 + 실제 표기 표시
-        hira = card["hira"] or "—"
-        kata = card["kata"] or "—"
-        correct_text = "히라가나" if target == "hira" else "가타카나"
-        if st.session_state.is_correct:
-            st.success(f"정답! → {correct_text}")
-        else:
-            st.error(f"오답! → 정답은 {correct_text}")
-        st.info(f"표기 예시: 히라가나 {hira} / 가타카나 {kata}")
-
-        # 1초 후 다음
-        time.sleep(1)
-        go_next()
-        st.rerun()
-    else:
-        # 아직 답 안했으면 1초마다 갱신
-        time.sleep(1)
-        st.rerun()
+    time.sleep(1)
+    st.rerun()
