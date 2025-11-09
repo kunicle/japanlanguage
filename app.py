@@ -1,41 +1,35 @@
-# app.py — Safari 호환: sleep 제거, JS setTimeout 자동 넘김
-# 제목 클릭 → 초기 화면(reset), 초기 화면 사진(data URL)
-# 모드: 1) 가나 보기(자동)  2) 한국어 보기(라벨만, 자동)
-# 카드 전환시 click.wav 재생(브라우저 정책상 첫 상호작용 이후 재생될 수 있음)
+# app.py — 최종본 (Safari 호환)
+# - 블로킹 sleep 제거, 자동 넘김은 JS setTimeout
+# - 콜백 내부 st.rerun() 사용 안 함
+# - 제목 클릭 → 초기화(옵션 화면), 홈 사진은 data URL 렌더링
+# - 모드: 1) 가나 보기(자동)  2) 한국어 보기(라벨만, 자동)
+# - 카드 전환 시 click.wav 재생(브라우저 정책상 첫 상호작용 후 재생될 수 있음)
 
-import random
 import base64
 import time
+import random
 from pathlib import Path
 import streamlit as st
 
-st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🀄", layout="centered")
+st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🇯🇵", layout="centered")
 
 # ----------------- 설정 -----------------
-FONT_PX   = 220
-TOTAL     = 20
-LIMIT_SEC = 7  # 초
+FONT_PX   = 220        # 카드 글꼴 크기
+TOTAL     = 20         # 카드 수
+LIMIT_SEC = 7          # 카드별 시간(초)
 
 HOME_IMAGE_CANDIDATES = ["home.png", "home.jpg", "assets/home.png", "assets/home.jpg"]
 CLICK_WAV_PATHS       = ["click.wav", "assets/click.wav"]
 
-# ----------------- 쿼리 파라미터 처리 -----------------
+# ----------------- 쿼리 파라미터 -----------------
 qp = st.experimental_get_query_params()
 
 # 제목 클릭으로 초기화
 if qp.get("reset") == ["1"]:
     for k in ["started", "cards", "idx", "mode", "start_time", "play_click"]:
-        if k in st.session_state:
-            del st.session_state[k]
+        st.session_state.pop(k, None)
     st.experimental_set_query_params()
-    st.rerun()  # <<<<<<<<<<<<<<<<<<<<<< 변경
-
-# 자동 넘김(자바스크립트가 붙여준 advance=1)을 처리
-def handle_advance_query():
-    if qp.get("advance") == ["1"] and st.session_state.get("started", False):
-        st.experimental_set_query_params()
-        go_next()
-        st.rerun()  # <<<<<<<<<<<<<<<<<<<<<< 변경
+    st.rerun()
 
 # ----------------- 리소스 로더 -----------------
 @st.cache_resource(show_spinner=False)
@@ -58,6 +52,7 @@ def load_home_image_bytes_and_mime():
     return None, None
 
 def play_click_if_needed():
+    # 사파리는 자동재생을 막을 수 있음(첫 상호작용 이후에는 재생될 가능성↑)
     if st.session_state.get("play_click", False):
         st.session_state.play_click = False
         b64 = _load_click_b64()
@@ -138,7 +133,7 @@ def build_roma2kana():
     return r2k
 ROMA2KANA = build_roma2kana()
 
-# ----------------- 카드 풀/생성 -----------------
+# ----------------- 카드 생성 -----------------
 def build_pool_dict(use_hira, use_kata, use_daku):
     pool = {}
     if use_hira:
@@ -172,10 +167,10 @@ def build_korean_cards(use_hira, use_kata, use_daku):
     return cards
 
 # ----------------- 상태 -----------------
-if "started" not in st.session_state: st.session_state.started = False
-if "play_click" not in st.session_state: st.session_state.play_click = False
+st.session_state.setdefault("started", False)
+st.session_state.setdefault("play_click", False)
 
-# ----------------- 제목(클릭 → 초기 화면) -----------------
+# ----------------- 제목(클릭 → 초기화) -----------------
 st.markdown(
     """
     <div style="text-align:center; margin-top:0.2rem; margin-bottom:0.8rem;">
@@ -201,14 +196,16 @@ with st.sidebar:
         if not cards:
             st.error("사용 가능한 카드가 없습니다. 스크립트 옵션을 조정해 보세요.")
         else:
-            st.session_state.cards = cards
-            st.session_state.idx = 0
-            st.session_state.started = True
-            st.session_state.mode = mode
-            st.session_state.start_time = time.time()
-            st.rerun()  # <<<<<<<<<<<<<<<<<<<<<< 변경
+            st.session_state.update({
+                "cards": cards,
+                "idx": 0,
+                "started": True,
+                "mode": mode,
+                "start_time": time.time(),
+            })
+            st.rerun()
 
-# ----------------- 초기 화면: 중앙 사진 표시(data URL) -----------------
+# ----------------- 초기 화면(사진 표시) -----------------
 if not st.session_state.get("started", False):
     img_bytes, mime = load_home_image_bytes_and_mime()
     if img_bytes:
@@ -227,30 +224,34 @@ if not st.session_state.get("started", False):
                 "(초기 화면 이미지: `home.png` 또는 `home.jpg`를 저장소 루트나 assets/ 폴더에 추가하세요.)")
     st.stop()
 
-# ----------------- 헬퍼 및 진행 -----------------
+# ----------------- 진행 헬퍼 -----------------
 def remaining_time():
-    elapsed = int(time.time() - st.session_state.start_time)
-    return max(0, LIMIT_SEC - elapsed)
+    sec_left = st.session_state.start_time + LIMIT_SEC - time.time()
+    return max(0, int(sec_left))
 
 def go_next():
     st.session_state.idx += 1
     st.session_state.start_time = time.time()
-    st.session_state.play_click = True  # 전환 사운드
+    st.session_state.play_click = True
 
-# 자동 넘김 트리거가 왔으면 먼저 처리
-handle_advance_query()
+# 자동 넘김 쿼리 처리(먼저)
+if qp.get("advance") == ["1"] and st.session_state.get("started", False):
+    st.experimental_set_query_params()  # advance 제거
+    go_next()
+    st.rerun()
 
+# ----------------- 본문 -----------------
 idx   = st.session_state.idx
 cards = st.session_state.cards
 mode  = st.session_state.mode
 
-# 상단 진행/타이머(표시는 참고용)
+# 상단 표시
 c1, c2 = st.columns([1,1])
 with c1: st.markdown(f"**문항 {idx+1}/{TOTAL}**")
 with c2: st.markdown(f"**남은 시간: {remaining_time()}s**")
 st.markdown("---")
 
-# 전환 직후 사운드 재생
+# 전환 사운드
 play_click_if_needed()
 
 # 종료 처리
@@ -259,10 +260,10 @@ if idx >= len(cards):
     st.write(f"총 {TOTAL}개 완료했습니다.")
     if st.button("처음으로 ↩", use_container_width=True):
         st.experimental_set_query_params(reset="1")
-        st.rerun()  # <<<<<<<<<<<<<<<<<<<<<< 변경
+        st.rerun()
     st.stop()
 
-# 본문
+# 카드 표시
 if mode.startswith("가나"):
     kana = cards[idx]["kana"]
     st.markdown(f"<div style='text-align:center;font-size:{FONT_PX}px;font-weight:900'>{kana}</div>", unsafe_allow_html=True)
@@ -273,17 +274,19 @@ else:
     st.markdown(f"<div style='text-align:center;font-size:{FONT_PX}px;font-weight:900'>{kor}</div>", unsafe_allow_html=True)
     st.markdown(f"<div style='text-align:center;font-size:22px;color:#666'>( {label} )</div>", unsafe_allow_html=True)
 
-# 수동 스킵
-st.button("다음 ▶", on_click=lambda: (go_next(), st.rerun()), use_container_width=True)  # << 변경
+# 수동 스킵(콜백 rerun 없음: 반환값으로 처리)
+if st.button("다음 ▶", use_container_width=True):
+    go_next()
+    st.rerun()
 
-# 공통 푸터
 st.markdown("---")
 st.caption("7초마다 자동으로 다음 카드로 넘어갑니다. 필요하면 '다음 ▶'으로 스킵하세요.")
 
-# ----------------- 자동 넘김(사파리 호환 setTimeout) -----------------
-remaining_ms = max(0, int((st.session_state.start_time + LIMIT_SEC) - time.time())) * 1000
-if remaining_ms < 100:
-    remaining_ms = LIMIT_SEC * 1000
+# ----------------- 자동 넘김(JS setTimeout) -----------------
+sec_left = max(0.0, st.session_state.start_time + LIMIT_SEC - time.time())
+ms_left  = int(sec_left * 1000)
+if ms_left < 100:
+    ms_left = LIMIT_SEC * 1000
 
 st.markdown(
     f"""
@@ -293,8 +296,8 @@ st.markdown(
         if (!usp.has('advance')) {{
           setTimeout(function(){{
             usp.set('advance','1');
-            window.location.search = usp.toString();
-          }}, {remaining_ms});
+            window.location.search = '?' + usp.toString();
+          }}, {ms_left});
         }}
       }})();
     </script>
