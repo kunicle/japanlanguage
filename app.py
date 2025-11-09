@@ -1,8 +1,8 @@
-import random
 import time
+import random
 import streamlit as st
 
-st.set_page_config(page_title="장태순 여사님 전용 테스트", page_icon="🀄", layout="centered")
+st.set_page_config(page_title="장태순 여사님 전용 테스트", page_icon="🇯🇵", layout="centered")
 
 # -----------------------------
 # Data
@@ -15,10 +15,12 @@ HIRAGANA_BASE = {
     "な":"na","に":"ni","ぬ":"nu","ね":"ne","の":"no",
     "は":"ha","ひ":"hi","ふ":"fu","へ":"he","ほ":"ho",
     "ま":"ma","み":"mi","む":"mu","め":"me","も":"mo",
-    "や":"ya","ゆ":"yu","よ":"yo",
+    "야":"ya","ゆ":"yu","よ":"yo",
     "ら":"ra","り":"ri","る":"ru","れ":"re","ろ":"ro",
     "わ":"wa","を":"o","ん":"n",
 }
+# '야' was a mistake; fix to 'や'
+HIRAGANA_BASE["や"]="ya"
 
 KATAKANA_BASE = {
     "ア":"a","イ":"i","ウ":"u","エ":"e","オ":"o",
@@ -40,18 +42,12 @@ HIRAGANA_DAKUTEN = {
     "ば":"ba","び":"bi","ぶ":"bu","べ":"be","ぼ":"bo",
     "ぱ":"pa","ぴ":"pi","ぷ":"pu","ぺ":"pe","ぽ":"po",
 }
-
 KATAKANA_DAKUTEN = {
     "ガ":"ga","ギ":"gi","グ":"gu","ゲ":"ge","ゴ":"go",
     "ザ":"za","ジ":"ji","ズ":"zu","ゼ":"ze","ゾ":"zo",
     "ダ":"da","ヂ":"ji","ヅ":"zu","デ":"de","ド":"do",
     "バ":"ba","ビ":"bi","ブ":"bu","ベ":"be","ボ":"bo",
     "パ":"pa","ピ":"pi","プ":"pu","ペ":"pe","ポ":"po",
-}
-
-EQUIV = {
-    "shi": {"si"}, "chi": {"ti"}, "tsu": {"tu"},
-    "ji": {"zi"}, "fu": {"hu"}, "o": {"wo"}
 }
 
 TOTAL = 20
@@ -80,7 +76,7 @@ with st.sidebar:
     use_hira = st.checkbox("히라가나", value=True)
     use_kata = st.checkbox("가타카나", value=True)
     use_daku = st.checkbox("탁음/반탁음 포함", value=True)
-    st.caption("세션: 무작위 20문항 · 카드당 7초")
+    st.caption(f"세션: 무작위 {TOTAL}문항 · 글자당 {LIMIT_SEC}초")
 
     if "started" not in st.session_state:
         st.session_state.started = False
@@ -93,13 +89,11 @@ with st.sidebar:
             items = list(pool.items())
             random.shuffle(items)
             picked = items[:TOTAL]
-            st.session_state.cards = [{"kana": k, "romaji": v} for k, v in picked]
+            # 카드에는 '표시할 글자(kana)'만 저장 (정답 표시는 안 함)
+            st.session_state.cards = [{"kana": k} for k, _ in picked]
             st.session_state.idx = 0
-            st.session_state.correct = 0
-            st.session_state.revealed = False
             st.session_state.started = True
             st.session_state.start_time = time.time()
-            st.session_state.answer = ""
             st.rerun()
 
 st.title("장태순 여사님 전용 테스트")
@@ -109,29 +103,14 @@ if not st.session_state.get("started", False):
     st.stop()
 
 # -----------------------------
-# Session helpers
+# Helpers
 # -----------------------------
 def remaining_time():
     elapsed = int(time.time() - st.session_state.start_time)
     return max(0, LIMIT_SEC - elapsed)
 
-def reveal(auto=False):
-    if st.session_state.revealed:
-        return
-    st.session_state.revealed = True
-    card = st.session_state.cards[st.session_state.idx]
-    user = st.session_state.answer.strip().lower()
-    romaji = card["romaji"]
-    ok = user == romaji or (romaji in EQUIV and user in EQUIV[romaji])
-    card["user_answer"] = user
-    card["is_correct"] = ok
-    if ok:
-        st.session_state.correct += 1
-
-def next_card():
+def go_next():
     st.session_state.idx += 1
-    st.session_state.revealed = False
-    st.session_state.answer = ""
     st.session_state.start_time = time.time()
 
 # -----------------------------
@@ -140,52 +119,36 @@ def next_card():
 idx = st.session_state.idx
 cards = st.session_state.cards
 
-# Results screen
+# End screen
 if idx >= len(cards):
-    score = f"{st.session_state.correct}/{TOTAL} 정답 ({round(st.session_state.correct/TOTAL*100)}%)"
-    st.subheader("결과")
-    st.write(score)
-    wrong = [c for c in cards if not c.get("is_correct", False)]
-    if wrong:
-        with st.expander("틀린 항목 펼치기"):
-            for c in wrong:
-                st.write(f"{c['kana']} → {c['romaji']}  (입력: {c.get('user_answer','')})")
-    st.success("새 세션을 시작하려면 사이드바에서 설정 후 버튼을 눌러주세요.")
+    st.subheader("끝!")
+    st.write(f"총 {TOTAL}개 완료했습니다.")
+    st.success("다시 하려면 사이드바에서 **새 세션 시작하기**를 눌러주세요.")
     st.stop()
 
 card = cards[idx]
 
-# Timer / Progress
-col1, col2 = st.columns([1,1])
-with col1:
+# 상단 정보
+c1, c2 = st.columns([1,1])
+with c1:
     st.markdown(f"**문항 {idx+1}/{TOTAL}**")
-with col2:
+with c2:
     st.markdown(f"**남은 시간: {remaining_time()}s**")
 
-# Auto-refresh countdown
-if not st.session_state.revealed and remaining_time() > 0:
+# 7초가 지나면 자동 다음
+if remaining_time() <= 0:
+    go_next()
     st.rerun()
 
-# Auto reveal when time expires
-if remaining_time() <= 0 and not st.session_state.revealed:
-    reveal(auto=True)
+st.markdown("---")
+# 글자 크게 표시
+st.markdown(
+    f"<div style='text-align:center;font-size:140px;font-weight:800'>{card['kana']}</div>",
+    unsafe_allow_html=True
+)
+
+# 즉시 넘기기 버튼
+st.button("다음 ▶", on_click=lambda: (go_next(), st.rerun()))
 
 st.markdown("---")
-st.markdown(f"<div style='text-align:center;font-size:120px;font-weight:700'>{card['kana']}</div>", unsafe_allow_html=True)
-
-# Answer form
-if not st.session_state.revealed:
-    st.session_state.answer = st.text_input("로마자 입력 후 Enter", value=st.session_state.answer, key="answer_box")
-    submit = st.button("제출", on_click=reveal)
-else:
-    romaji = card["romaji"]
-    user = st.session_state.answer.strip().lower()
-    ok = user == romaji or (romaji in EQUIV and user in EQUIV[romaji])
-    if ok:
-        st.success(f"정답! → {romaji}")
-    else:
-        st.error(f"오답  정답: {romaji}")
-    st.button("다음 문제", on_click=next_card)
-
-st.markdown("---")
-st.caption("Tip: Enter 키로 제출할 수 있어요. 시간 종료 시 자동 공개 후 다음 문제 버튼이 활성화됩니다.")
+st.caption("입력 없이 7초마다 자동으로 다음 글자가 표시됩니다. 필요하면 '다음' 버튼으로 스킵하세요.")
