@@ -1,8 +1,9 @@
-# app.py — 제목 클릭 시 초기화(옵션 화면으로), 초기 화면 중앙 사진 표시(data URL)
+# app.py — Safari 호환: 블로킹 sleep 제거, JS setTimeout으로 자동 넘김
+# 제목 클릭 → 초기 화면(reset) / 초기 화면 중앙 사진(data URL)
 # 모드:
 #   1) 가나 보기(자동 넘김)
 #   2) 한국어 보기(한글 발음 + "(히라가나/가타카나)" 라벨만, 자동 넘김)
-# 카드 전환 때마다 click.wav 재생, 글꼴 220px 고정
+# 카드 전환 시 click.wav(사용자 조작 이후 브라우저가 허용하는 경우에만 재생)
 
 import time
 import random
@@ -10,29 +11,38 @@ import base64
 from pathlib import Path
 import streamlit as st
 
-st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🀄", layout="centered")
+st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🇯🇵", layout="centered")
 
-# ----------------- 고정 값 -----------------
+# ----------------- 설정 -----------------
 FONT_PX   = 220
 TOTAL     = 20
-LIMIT_SEC = 7
+LIMIT_SEC = 7  # 초
 
 HOME_IMAGE_CANDIDATES = ["home.png", "home.jpg", "assets/home.png", "assets/home.jpg"]
 CLICK_WAV_PATHS       = ["click.wav", "assets/click.wav"]
 
-# ----------------- 쿼리파라미터: reset 처리 -----------------
+# ----------------- 쿼리 파라미터 처리 -----------------
 qp = st.experimental_get_query_params()
+
+# 제목 클릭으로 초기화
 if qp.get("reset") == ["1"]:
     for k in ["started", "cards", "idx", "mode", "start_time", "play_click"]:
         if k in st.session_state:
             del st.session_state[k]
     st.experimental_set_query_params()
-    st.rerun()
+    st.experimental_rerun()
+
+# 자동 넘김(자바스크립트가 붙여준 advance=1)을 처리
+def handle_advance_query():
+    if qp.get("advance") == ["1"] and st.session_state.get("started", False):
+        # 쿼리 제거 후 다음 카드로
+        st.experimental_set_query_params()
+        go_next()
+        st.experimental_rerun()
 
 # ----------------- 리소스 로더 -----------------
 @st.cache_resource(show_spinner=False)
 def _load_click_b64():
-    """click.wav를 base64로 로드 (없으면 None)"""
     for p in CLICK_WAV_PATHS:
         fp = Path(p)
         if fp.exists() and fp.is_file():
@@ -41,7 +51,6 @@ def _load_click_b64():
 
 @st.cache_resource(show_spinner=False)
 def load_home_image_bytes_and_mime():
-    """home.png/jpg 파일을 (bytes, mime)로 반환"""
     for p in HOME_IMAGE_CANDIDATES:
         fp = Path(p)
         if fp.exists() and fp.is_file():
@@ -52,7 +61,7 @@ def load_home_image_bytes_and_mime():
     return None, None
 
 def play_click_if_needed():
-    """카드 전환 직후 1회 '철컥' 재생"""
+    # 사파리는 자동재생을 차단할 수 있음(첫 사용자 조작 이후에는 재생될 수 있어요)
     if st.session_state.get("play_click", False):
         st.session_state.play_click = False
         b64 = _load_click_b64()
@@ -142,7 +151,7 @@ def build_pool_dict(use_hira, use_kata, use_daku):
     if use_kata:
         pool.update(KATAKANA_BASE)
         if use_daku: pool.update(KATAKANA_DAKUTEN)
-    return pool  # kana->romaji
+    return pool
 
 def build_kana_cards(use_hira, use_kata, use_daku):
     d = build_pool_dict(use_hira, use_kata, use_daku)
@@ -150,7 +159,7 @@ def build_kana_cards(use_hira, use_kata, use_daku):
     return [{"kana": k} for k in items[:TOTAL]]
 
 def build_korean_cards(use_hira, use_kata, use_daku):
-    d = build_pool_dict(use_hira, use_kata, use_daku)  # kana->romaji
+    d = build_pool_dict(use_hira, use_kata, use_daku)
     romas = list(set(d.values())); random.shuffle(romas)
     cards = []
     for r in romas:
@@ -201,7 +210,7 @@ with st.sidebar:
             st.session_state.started = True
             st.session_state.mode = mode
             st.session_state.start_time = time.time()
-            st.rerun()
+            st.experimental_rerun()
 
 # ----------------- 초기 화면: 중앙 사진 표시(data URL) -----------------
 if not st.session_state.get("started", False):
@@ -222,8 +231,9 @@ if not st.session_state.get("started", False):
                 "(초기 화면 이미지: `home.png` 또는 `home.jpg`를 저장소 루트나 assets/ 폴더에 추가하세요.)")
     st.stop()
 
-# ----------------- 공통 헬퍼 -----------------
+# ----------------- 헬퍼 및 진행 -----------------
 def remaining_time():
+    # 표시는 정적일 수 있음(사파리 호환 우선)
     elapsed = int(time.time() - st.session_state.start_time)
     return max(0, LIMIT_SEC - elapsed)
 
@@ -232,11 +242,14 @@ def go_next():
     st.session_state.start_time = time.time()
     st.session_state.play_click = True  # 전환 사운드
 
+# 자동 넘김 트리거가 왔으면 먼저 처리
+handle_advance_query()
+
 idx   = st.session_state.idx
 cards = st.session_state.cards
 mode  = st.session_state.mode
 
-# 상단 진행/타이머
+# 상단 진행/타이머(표시는 참고용)
 c1, c2 = st.columns([1,1])
 with c1: st.markdown(f"**문항 {idx+1}/{TOTAL}**")
 with c2: st.markdown(f"**남은 시간: {remaining_time()}s**")
@@ -251,30 +264,48 @@ if idx >= len(cards):
     st.write(f"총 {TOTAL}개 완료했습니다.")
     if st.button("처음으로 ↩", use_container_width=True):
         st.experimental_set_query_params(reset="1")
-        st.rerun()
+        st.experimental_rerun()
     st.stop()
 
-# 본문
+# 본문(콘텐츠 표시)
 if mode.startswith("가나"):
     kana = cards[idx]["kana"]
-    if remaining_time() <= 0:
-        go_next(); st.rerun()
     st.markdown(f"<div style='text-align:center;font-size:{FONT_PX}px;font-weight:900'>{kana}</div>", unsafe_allow_html=True)
-    st.button("다음 ▶", on_click=go_next, use_container_width=True)
 else:
     card  = cards[idx]
     kor   = card["kor"]
     label = card["label"]
-    if remaining_time() <= 0:
-        go_next(); st.rerun()
     st.markdown(f"<div style='text-align:center;font-size:{FONT_PX}px;font-weight:900'>{kor}</div>", unsafe_allow_html=True)
     st.markdown(f"<div style='text-align:center;font-size:22px;color:#666'>( {label} )</div>", unsafe_allow_html=True)
-    st.button("다음 ▶", on_click=go_next, use_container_width=True)
+
+# 수동 스킵
+st.button("다음 ▶", on_click=lambda: (go_next(), st.experimental_rerun()), use_container_width=True)
 
 # 공통 푸터
 st.markdown("---")
 st.caption("7초마다 자동으로 다음 카드로 넘어갑니다. 필요하면 '다음 ▶'으로 스킵하세요.")
 
-# 1초마다 갱신
-time.sleep(1)
-st.rerun()
+# ----------------- 자동 넘김(사파리 호환 setTimeout) -----------------
+# 현재 카드 시작 시각 기준 남은 시간 계산 → JS로 7초 뒤 advance=1 추가
+remaining_ms = max(0, int((st.session_state.start_time + LIMIT_SEC) - time.time())) * 1000
+# 조금 넉넉하게 보정
+if remaining_ms < 100:  # 방금 진입한 프레임이면 7초 전체 대기
+    remaining_ms = LIMIT_SEC * 1000
+
+st.markdown(
+    f"""
+    <script>
+      (function(){{
+        // 이미 advance 쿼리가 붙은 상태면 중복 예약하지 않음
+        const usp = new URLSearchParams(window.location.search);
+        if (!usp.has('advance')) {{
+          setTimeout(function(){{
+            usp.set('advance','1');
+            window.location.search = usp.toString();
+          }}, {remaining_ms});
+        }}
+      }})();
+    </script>
+    """,
+    unsafe_allow_html=True,
+)
