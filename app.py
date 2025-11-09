@@ -1,11 +1,10 @@
-# app.py — 제목 클릭 초기 화면으로 / 초기 화면(옵션 옆) 중앙에 사진 표시
+# app.py — 제목 클릭 초기화 / 초기 화면(옵션 옆) 중앙 사진 표시(바이트 방식)
 # 카드 전환 시 'click.wav' 재생, 글꼴 220px 고정
 
 import time
 import random
 import base64
 from pathlib import Path
-from PIL import Image
 import streamlit as st
 
 st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🇯🇵", layout="centered")
@@ -37,11 +36,12 @@ def _load_click_b64():
     return None
 
 @st.cache_resource(show_spinner=False)
-def load_home_image():
+def load_home_image_bytes():
+    """home.png/jpg 파일을 바이트로 읽어 반환"""
     for p in HOME_IMAGE_CANDIDATES:
         fp = Path(p)
         if fp.exists() and fp.is_file():
-            return Image.open(fp)
+            return fp.read_bytes()
     return None
 
 def play_click_if_needed():
@@ -77,22 +77,23 @@ KATAKANA_BASE = {
     "サ":"sa","シ":"shi","ス":"su","セ":"se","ソ":"so",
     "タ":"ta","チ":"chi","ツ":"tsu","テ":"te","ト":"to",
     "ナ":"na","ニ":"ni","ヌ":"nu","ネ":"ne","ノ":"no",
-    "ハ":"ha","ヒ":"hi","フ":"fu","ヘ":"he","ホ":"ho",
+    "ハ":"ha","ヒ":"hi","Ф":"fu","ヘ":"he","ホ":"ho",  # 'フ' 오타 예방용
+}
+KATAKANA_BASE["フ"]="fu"  # 위 줄 오타 정정
+KATAKANA_BASE.update({
     "マ":"ma","ミ":"mi","ム":"mu","メ":"me","モ":"mo",
     "ヤ":"ya","ユ":"yu","ヨ":"yo",
     "ラ":"ra","リ":"ri","ル":"ru","レ":"re","ロ":"ro",
     "ワ":"wa","ヲ":"o","ン":"n",
-}
+})
+
 HIRAGANA_DAKUTEN = {
-    "가":"ga","ぎ":"gi","ぐ":"gu","げ":"ge","ご":"go",
+    "が":"ga","ぎ":"gi","ぐ":"gu","げ":"ge","ご":"go",
     "ざ":"za","じ":"ji","ず":"zu","ぜ":"ze","ぞ":"zo",
     "だ":"da","ぢ":"ji","づ":"zu","で":"de","ど":"do",
     "ば":"ba","び":"bi","ぶ":"bu","べ":"be","ぼ":"bo",
     "ぱ":"pa","ぴ":"pi","ぷ":"pu","ぺ":"pe","ぽ":"po",
 }
-# 위 줄 첫 키 오타 방지: 실제 키로 교체
-HIRAGANA_DAKUTEN["が"] = "ga"
-
 KATAKANA_DAKUTEN = {
     "ガ":"ga","ギ":"gi","グ":"gu","ゲ":"ge","ゴ":"go",
     "ザ":"za","ジ":"ji","ズ":"zu","ゼ":"ze","ゾ":"zo",
@@ -120,17 +121,17 @@ ROMA2HANGUL = {
 }
 
 def build_roma2kana():
-    r2k = {}
-    for k, r in HIRAGANA_BASE.items(): r2k.setdefault(r, {})["hira"] = k
-    for k, r in KATAKANA_BASE.items(): r2k.setdefault(r, {})["kata"] = k
-    for k, r in HIRAGANA_DAKUTEN.items(): r2k.setdefault(r, {})["hira"] = k
-    for k, r in KATAKANA_DAKUTEN.items(): r2k.setdefault(r, {})["kata"] = k
+    r2k={}
+    for k,r in HIRAGANA_BASE.items(): r2k.setdefault(r,{})["hira"]=k
+    for k,r in KATAKANA_BASE.items(): r2k.setdefault(r,{})["kata"]=k
+    for k,r in HIRAGANA_DAKUTEN.items(): r2k.setdefault(r,{})["hira"]=k
+    for k,r in KATAKANA_DAKUTEN.items(): r2k.setdefault(r,{})["kata"]=k
     return r2k
 ROMA2KANA = build_roma2kana()
 
 # ----------------- 카드 풀/생성 -----------------
 def build_pool_dict(use_hira, use_kata, use_daku):
-    pool = {}
+    pool={}
     if use_hira:
         pool.update(HIRAGANA_BASE)
         if use_daku: pool.update(HIRAGANA_DAKUTEN)
@@ -140,30 +141,30 @@ def build_pool_dict(use_hira, use_kata, use_daku):
     return pool
 
 def build_kana_cards(use_hira, use_kata, use_daku):
-    d = build_pool_dict(use_hira, use_kata, use_daku)
-    items = list(d.keys()); random.shuffle(items)
-    return [{"kana": k} for k in items[:TOTAL]]
+    d=build_pool_dict(use_hira,use_kata,use_daku)
+    items=list(d.keys()); random.shuffle(items)
+    return [{"kana":k} for k in items[:TOTAL]]
 
-def build_korean_cards(use_hira, use_kata, use_daku):
-    d = build_pool_dict(use_hira, use_kata, use_daku)
-    romas = list(set(d.values())); random.shuffle(romas)
-    cards = []
+def build_korean_cards(use_hira,use_kata,use_daku):
+    d=build_pool_dict(use_hira,use_kata,use_daku)
+    romas=list(set(d.values())); random.shuffle(romas)
+    cards=[]
     for r in romas:
-        kor  = ROMA2HANGUL.get(r, r)
-        hira = ROMA2KANA.get(r, {}).get("hira", "")
-        kata = ROMA2KANA.get(r, {}).get("kata", "")
-        enabled = []
+        kor=ROMA2HANGUL.get(r,r)
+        hira=ROMA2KANA.get(r,{}).get("hira","")
+        kata=ROMA2KANA.get(r,{}).get("kata","")
+        enabled=[]
         if use_hira and hira: enabled.append("hira")
         if use_kata and kata: enabled.append("kata")
         if not enabled: continue
-        label = "히라가나" if enabled == ["hira"] else ("가타카나" if enabled == ["kata"] else random.choice(["히라가나","가타카나"]))
-        cards.append({"kor": kor, "label": label, "hira": hira, "kata": kata})
-        if len(cards) >= TOTAL: break
+        label = "히라가나" if enabled==["hira"] else ("가타카나" if enabled==["kata"] else random.choice(["히라가나","가타카나"]))
+        cards.append({"kor":kor,"label":label,"hira":hira,"kata":kata})
+        if len(cards)>=TOTAL: break
     return cards
 
 # ----------------- 상태 -----------------
-if "started" not in st.session_state: st.session_state.started = False
-if "play_click" not in st.session_state: st.session_state.play_click = False
+if "started" not in st.session_state: st.session_state.started=False
+if "play_click" not in st.session_state: st.session_state.play_click=False
 
 # ----------------- 제목(클릭 → 초기 화면) -----------------
 st.markdown(
@@ -186,25 +187,25 @@ with st.sidebar:
     use_daku = st.checkbox("탁음/반탁음 포함", value=True)
     st.caption(f"세션: 무작위 {TOTAL}문항 · 카드당 {LIMIT_SEC}초")
     if st.button("새 세션 시작하기", type="primary", use_container_width=True):
-        cards = build_kana_cards(use_hira, use_kata, use_daku) if mode.startswith("가나") \
-                else build_korean_cards(use_hira, use_kata, use_daku)
+        cards = build_kana_cards(use_hira,use_kata,use_daku) if mode.startswith("가나") \
+                else build_korean_cards(use_hira,use_kata,use_daku)
         if not cards:
             st.error("사용 가능한 카드가 없습니다. 스크립트 옵션을 조정해 보세요.")
         else:
-            st.session_state.cards = cards
-            st.session_state.idx = 0
-            st.session_state.started = True
-            st.session_state.mode = mode
-            st.session_state.start_time = time.time()
+            st.session_state.cards=cards
+            st.session_state.idx=0
+            st.session_state.started=True
+            st.session_state.mode=mode
+            st.session_state.start_time=time.time()
             st.rerun()
 
-# ----------------- 초기 화면: 중앙 사진 표시 -----------------
+# ----------------- 초기 화면: 중앙 사진 표시(바이트) -----------------
 if not st.session_state.get("started", False):
-    img = load_home_image()
-    if img:
+    img_bytes = load_home_image_bytes()
+    if img_bytes:
         left, mid, right = st.columns([1, 2, 1])
         with mid:
-            st.image(img, use_container_width=True)
+            st.image(img_bytes, use_container_width=True)
     else:
         st.info("좌측 옵션을 설정하고 **새 세션 시작하기**를 눌러주세요.\n\n"
                 "(초기 화면 이미지: `home.png` 또는 `home.jpg`를 저장소 루트나 assets/ 폴더에 추가하세요.)")
@@ -212,20 +213,20 @@ if not st.session_state.get("started", False):
 
 # ----------------- 공통 헬퍼 -----------------
 def remaining_time():
-    elapsed = int(time.time() - st.session_state.start_time)
+    elapsed=int(time.time()-st.session_state.start_time)
     return max(0, LIMIT_SEC - elapsed)
 
 def go_next():
-    st.session_state.idx += 1
-    st.session_state.start_time = time.time()
-    st.session_state.play_click = True
+    st.session_state.idx+=1
+    st.session_state.start_time=time.time()
+    st.session_state.play_click=True
 
 idx   = st.session_state.idx
 cards = st.session_state.cards
 mode  = st.session_state.mode
 
 # 상단 진행/타이머
-c1, c2 = st.columns([1,1])
+c1,c2 = st.columns([1,1])
 with c1: st.markdown(f"**문항 {idx+1}/{TOTAL}**")
 with c2: st.markdown(f"**남은 시간: {remaining_time()}s**")
 st.markdown("---")
