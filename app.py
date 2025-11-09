@@ -1,8 +1,8 @@
-# app.py — 홈/플레이 전환 + 제목 클릭 홈 이동 + 카드 전환 사운드 + 큰 글씨(220px)
+# app.py — 제목 클릭하면 초기 화면으로, 초기 화면(옵션 영역) 중앙에 사진 표시
 # 모드:
 #   1) 가나 보기(자동 넘김)
 #   2) 한국어 보기(한글 발음 + "(히라가나/가타카나)" 라벨만, 자동 넘김)
-# Streamlit 1.39: 콜백 내부 st.rerun() 미사용, 메인 흐름 말미에서만 st.rerun()
+# 카드 전환 때마다 click.wav 재생, 글꼴 220px 고정
 
 import time
 import random
@@ -10,15 +10,25 @@ import base64
 from pathlib import Path
 import streamlit as st
 
-st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🀄", layout="centered")
+st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🇯🇵", layout="centered")
 
-# ----------------- 고정 UI/타이밍 -----------------
-FONT_PX   = 220   # 카드 글자 크기(고정)
-TOTAL     = 20    # 카드 개수
-LIMIT_SEC = 7     # 카드당 시간(초)
+# ----------------- 고정 값 -----------------
+FONT_PX   = 220
+TOTAL     = 20
+LIMIT_SEC = 7
 
 HOME_IMAGE_CANDIDATES = ["home.png", "home.jpg", "assets/home.png", "assets/home.jpg"]
 CLICK_WAV_PATHS       = ["click.wav", "assets/click.wav"]
+
+# ----------------- 쿼리파라미터: reset 처리 -----------------
+qp = st.experimental_get_query_params()
+if qp.get("reset") == ["1"]:
+    # 초기 화면 상태로 리셋
+    for k in ["started", "cards", "idx", "mode", "start_time", "play_click"]:
+        if k in st.session_state:
+            del st.session_state[k]
+    st.experimental_set_query_params()  # URL 정리
+    st.rerun()
 
 # ----------------- 리소스 로더 -----------------
 @st.cache_resource(show_spinner=False)
@@ -37,7 +47,6 @@ def _find_home_image_path():
     return None
 
 def play_click_if_needed():
-    """카드 전환 직후 1회 '철컥' 재생"""
     if st.session_state.get("play_click", False):
         st.session_state.play_click = False
         b64 = _load_click_b64()
@@ -154,18 +163,12 @@ def build_korean_cards(use_hira, use_kata, use_daku):
 # ----------------- 상태 -----------------
 if "started" not in st.session_state: st.session_state.started = False
 if "play_click" not in st.session_state: st.session_state.play_click = False
-if "page" not in st.session_state: st.session_state.page = "home"  # 기본은 홈
 
-# URL 쿼리 파라미터로 페이지 전환 인식
-qp = st.experimental_get_query_params()
-if qp.get("page") == ["home"] and st.session_state.page != "home":
-    st.session_state.page = "home"
-
-# ----------------- 제목(클릭 → 홈) -----------------
+# ----------------- 제목(클릭하면 초기 화면로) -----------------
 st.markdown(
-    f"""
+    """
     <div style="text-align:center; margin-top:0.2rem; margin-bottom:0.8rem;">
-      <a href="?page=home" style="text-decoration:none; color:inherit;">
+      <a href="?reset=1" style="text-decoration:none; color:inherit;">
         <span style="font-size:28px; font-weight:800;">장태순 여사님 일본어 테스트</span>
       </a>
     </div>
@@ -173,36 +176,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ----------------- 홈 화면 -----------------
-if st.session_state.page == "home":
-    # 홈에서는 사이드바 숨김 + 이미지 중앙 표시
-    st.markdown("""
-        <style>
-        [data-testid="stSidebar"] {display: none;}
-        .block-container {padding-top: 0.5rem;}
-        </style>
-    """, unsafe_allow_html=True)
-
-    img_path = _find_home_image_path()
-    if img_path:
-        st.markdown(
-            f"""
-            <div style="display:flex; justify-content:center; align-items:center;">
-              <img src="app://{img_path}" style="max-width:90%; height:auto; border-radius:16px; box-shadow:0 6px 24px rgba(0,0,0,0.12);" />
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    else:
-        st.info("홈 이미지를 찾을 수 없습니다. 저장소 루트에 `home.png` 또는 `home.jpg`를 업로드하세요.")
-
-    st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
-    if st.button("시작하기 ▶", use_container_width=True):
-        st.session_state.page = "play"
-        st.rerun()
-    st.stop()
-
-# ----------------- 플레이 화면(사이드바 옵션) -----------------
+# ----------------- 사이드바(항상 표시) -----------------
 with st.sidebar:
     st.header("옵션")
     mode = st.radio("모드 선택", ["가나 보기(자동 넘김)", "한국어 보기(라벨만 표시)"], index=0)
@@ -221,11 +195,22 @@ with st.sidebar:
             st.session_state.started = True
             st.session_state.mode = mode
             st.session_state.start_time = time.time()
-            st.session_state.page = "play"
             st.rerun()
 
+# ----------------- 초기 화면(옵션 옆 영역에 사진 표시) -----------------
 if not st.session_state.get("started", False):
-    st.info("좌측 옵션을 설정하고 **새 세션 시작하기**를 눌러주세요.")
+    img_path = _find_home_image_path()
+    if img_path:
+        st.markdown(
+            f"""
+            <div style="display:flex; justify-content:center; align-items:center;">
+              <img src="app://{img_path}" style="max-width:66%; height:auto; border-radius:16px; box-shadow:0 6px 24px rgba(0,0,0,0.12);" />
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("좌측 옵션을 설정하고 **새 세션 시작하기**를 눌러주세요.\n\n(초기 화면 이미지: `home.png` 또는 `home.jpg`를 저장소 루트에 추가하면 사진이 표시됩니다.)")
     st.stop()
 
 # ----------------- 공통 헬퍼 -----------------
@@ -255,7 +240,10 @@ play_click_if_needed()
 if idx >= len(cards):
     st.subheader("끝!")
     st.write(f"총 {TOTAL}개 완료했습니다.")
-    st.success("다시 하려면 사이드바에서 **새 세션 시작하기**를 누르세요.")
+    # 처음으로 버튼(제목 클릭과 동일하게 reset=1)
+    if st.button("처음으로 ↩", use_container_width=True):
+        st.experimental_set_query_params(reset="1")
+        st.rerun()
     st.stop()
 
 # 본문
@@ -275,7 +263,7 @@ else:
     st.markdown(f"<div style='text-align:center;font-size:22px;color:#666'>( {label} )</div>", unsafe_allow_html=True)
     st.button("다음 ▶", on_click=go_next, use_container_width=True)
 
-# 공통 푸터(한 번만)
+# 공통 푸터
 st.markdown("---")
 st.caption("7초마다 자동으로 다음 카드로 넘어갑니다. 필요하면 '다음 ▶'으로 스킵하세요.")
 
