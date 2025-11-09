@@ -144,6 +144,15 @@ def go_next():
 # ===== 사이드바 =====
 with st.sidebar:
     st.header("옵션")
+    
+    # 세션 진행 중이면 사이드바 내용 최소화
+    if st.session_state.get("started", False):
+        st.info("📝 테스트 진행 중입니다")
+        if st.button("테스트 중단하기", type="secondary"):
+            st.session_state.started = False
+            st.rerun()
+        st.stop()
+    
     mode = st.radio("모드 선택", ["가나 보기(자동 넘김)", "한국어 보기(라벨만 표시)"], index=0)
     use_hira = st.checkbox("히라가나 포함", value=True)
     use_kata = st.checkbox("가타카나 포함", value=True)
@@ -194,18 +203,6 @@ if not st.session_state.get("started", False):
 idx = st.session_state.idx
 cards = st.session_state.cards
 mode = st.session_state.mode
-
-# 사이드바 숨기기 (진행 중일 때)
-st.markdown(
-    """
-    <style>
-    [data-testid="stSidebar"] {
-        display: none;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
 
 # 종료 화면
 if idx >= len(cards):
