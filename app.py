@@ -10,7 +10,7 @@ import base64
 from pathlib import Path
 import streamlit as st
 
-st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🀄", layout="centered")
+st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🇯🇵", layout="centered")
 
 # ===== 데이터 =====
 HIRAGANA_BASE = {
