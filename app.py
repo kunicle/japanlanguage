@@ -102,7 +102,7 @@ with st.sidebar:
             st.session_state.answer = ""
             st.rerun()
 
-st.title("Kana Flashcards (ひらがな・カタカナ)")
+st.title("장태순 여사님을 위한 일본어 기초 테스트")
 
 if not st.session_state.get("started", False):
     st.info("좌측 사이드바에서 옵션을 선택하고 **새 세션 시작하기**를 눌러주세요.")
