@@ -1,8 +1,8 @@
-# app.py — 중복 캡션 제거 버전
-# 카드 전환 시 항상 '철컥' 사운드 / 큰 글씨(고정 220px)
+# app.py — 홈/플레이 전환 + 제목 클릭 홈 이동 + 카드 전환 사운드 + 큰 글씨(220px)
 # 모드:
 #   1) 가나 보기(자동 넘김)
 #   2) 한국어 보기(한글 발음 + "(히라가나/가타카나)" 라벨만, 자동 넘김)
+# Streamlit 1.39: 콜백 내부 st.rerun() 미사용, 메인 흐름 말미에서만 st.rerun()
 
 import time
 import random
@@ -12,12 +12,15 @@ import streamlit as st
 
 st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🀄", layout="centered")
 
-FONT_PX   = 220
-TOTAL     = 20
-LIMIT_SEC = 7
+# ----------------- 고정 UI/타이밍 -----------------
+FONT_PX   = 220   # 카드 글자 크기(고정)
+TOTAL     = 20    # 카드 개수
+LIMIT_SEC = 7     # 카드당 시간(초)
 
-CLICK_WAV_PATHS = ["click.wav", "assets/click.wav"]
+HOME_IMAGE_CANDIDATES = ["home.png", "home.jpg", "assets/home.png", "assets/home.jpg"]
+CLICK_WAV_PATHS       = ["click.wav", "assets/click.wav"]
 
+# ----------------- 리소스 로더 -----------------
 @st.cache_resource(show_spinner=False)
 def _load_click_b64():
     for p in CLICK_WAV_PATHS:
@@ -26,7 +29,15 @@ def _load_click_b64():
             return base64.b64encode(fp.read_bytes()).decode("ascii")
     return None
 
+@st.cache_resource(show_spinner=False)
+def _find_home_image_path():
+    for p in HOME_IMAGE_CANDIDATES:
+        if Path(p).exists():
+            return p
+    return None
+
 def play_click_if_needed():
+    """카드 전환 직후 1회 '철컥' 재생"""
     if st.session_state.get("play_click", False):
         st.session_state.play_click = False
         b64 = _load_click_b64()
@@ -40,7 +51,7 @@ def play_click_if_needed():
                 unsafe_allow_html=True,
             )
 
-# -------- Data --------
+# ----------------- 데이터 -----------------
 HIRAGANA_BASE = {
     "あ":"a","い":"i","う":"u","え":"e","お":"o",
     "か":"ka","き":"ki","く":"ku","け":"ke","こ":"ko",
@@ -100,28 +111,23 @@ ROMA2HANGUL = {
 
 def build_roma2kana():
     r2k = {}
-    for k, r in HIRAGANA_BASE.items():
-        r2k.setdefault(r, {})["hira"] = k
-    for k, r in KATAKANA_BASE.items():
-        r2k.setdefault(r, {})["kata"] = k
-    for k, r in HIRAGANA_DAKUTEN.items():
-        r2k.setdefault(r, {})["hira"] = k
-    for k, r in KATAKANA_DAKUTEN.items():
-        r2k.setdefault(r, {})["kata"] = k
+    for k, r in HIRAGANA_BASE.items(): r2k.setdefault(r, {})["hira"] = k
+    for k, r in KATAKANA_BASE.items(): r2k.setdefault(r, {})["kata"] = k
+    for k, r in HIRAGANA_DAKUTEN.items(): r2k.setdefault(r, {})["hira"] = k
+    for k, r in KATAKANA_DAKUTEN.items(): r2k.setdefault(r, {})["kata"] = k
     return r2k
 ROMA2KANA = build_roma2kana()
 
+# ----------------- 카드 풀/생성 -----------------
 def build_pool_dict(use_hira, use_kata, use_daku):
     pool = {}
     if use_hira:
         pool.update(HIRAGANA_BASE)
-        if use_daku:
-            pool.update(HIRAGANA_DAKUTEN)
+        if use_daku: pool.update(HIRAGANA_DAKUTEN)
     if use_kata:
         pool.update(KATAKANA_BASE)
-        if use_daku:
-            pool.update(KATAKANA_DAKUTEN)
-    return pool
+        if use_daku: pool.update(KATAKANA_DAKUTEN)
+    return pool  # kana->romaji
 
 def build_kana_cards(use_hira, use_kata, use_daku):
     d = build_pool_dict(use_hira, use_kata, use_daku)
@@ -129,31 +135,74 @@ def build_kana_cards(use_hira, use_kata, use_daku):
     return [{"kana": k} for k in items[:TOTAL]]
 
 def build_korean_cards(use_hira, use_kata, use_daku):
-    d = build_pool_dict(use_hira, use_kata, use_daku)
+    d = build_pool_dict(use_hira, use_kata, use_daku)  # kana->romaji
     romas = list(set(d.values())); random.shuffle(romas)
     cards = []
     for r in romas:
-        kor = ROMA2HANGUL.get(r, r)
+        kor  = ROMA2HANGUL.get(r, r)
         hira = ROMA2KANA.get(r, {}).get("hira", "")
         kata = ROMA2KANA.get(r, {}).get("kata", "")
         enabled = []
         if use_hira and hira: enabled.append("hira")
         if use_kata and kata: enabled.append("kata")
         if not enabled: continue
-        label = (
-            "히라가나" if enabled == ["hira"]
-            else "가타카나" if enabled == ["kata"]
-            else random.choice(["히라가나","가타카나"])
-        )
+        label = "히라가나" if enabled == ["hira"] else ("가타카나" if enabled == ["kata"] else random.choice(["히라가나","가타카나"]))
         cards.append({"kor": kor, "label": label, "hira": hira, "kata": kata})
         if len(cards) >= TOTAL: break
     return cards
 
-# ---- state ----
+# ----------------- 상태 -----------------
 if "started" not in st.session_state: st.session_state.started = False
 if "play_click" not in st.session_state: st.session_state.play_click = False
+if "page" not in st.session_state: st.session_state.page = "home"  # 기본은 홈
 
-# ---- sidebar (options) ----
+# URL 쿼리 파라미터로 페이지 전환 인식
+qp = st.experimental_get_query_params()
+if qp.get("page") == ["home"] and st.session_state.page != "home":
+    st.session_state.page = "home"
+
+# ----------------- 제목(클릭 → 홈) -----------------
+st.markdown(
+    f"""
+    <div style="text-align:center; margin-top:0.2rem; margin-bottom:0.8rem;">
+      <a href="?page=home" style="text-decoration:none; color:inherit;">
+        <span style="font-size:28px; font-weight:800;">장태순 여사님 일본어 테스트</span>
+      </a>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+# ----------------- 홈 화면 -----------------
+if st.session_state.page == "home":
+    # 홈에서는 사이드바 숨김 + 이미지 중앙 표시
+    st.markdown("""
+        <style>
+        [data-testid="stSidebar"] {display: none;}
+        .block-container {padding-top: 0.5rem;}
+        </style>
+    """, unsafe_allow_html=True)
+
+    img_path = _find_home_image_path()
+    if img_path:
+        st.markdown(
+            f"""
+            <div style="display:flex; justify-content:center; align-items:center;">
+              <img src="app://{img_path}" style="max-width:90%; height:auto; border-radius:16px; box-shadow:0 6px 24px rgba(0,0,0,0.12);" />
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.info("홈 이미지를 찾을 수 없습니다. 저장소 루트에 `home.png` 또는 `home.jpg`를 업로드하세요.")
+
+    st.markdown("<div style='height:24px'></div>", unsafe_allow_html=True)
+    if st.button("시작하기 ▶", use_container_width=True):
+        st.session_state.page = "play"
+        st.rerun()
+    st.stop()
+
+# ----------------- 플레이 화면(사이드바 옵션) -----------------
 with st.sidebar:
     st.header("옵션")
     mode = st.radio("모드 선택", ["가나 보기(자동 넘김)", "한국어 보기(라벨만 표시)"], index=0)
@@ -161,7 +210,7 @@ with st.sidebar:
     use_kata = st.checkbox("가타카나 포함", value=True)
     use_daku = st.checkbox("탁음/반탁음 포함", value=True)
     st.caption(f"세션: 무작위 {TOTAL}문항 · 카드당 {LIMIT_SEC}초")
-    if st.button("새 세션 시작하기", type="primary"):
+    if st.button("새 세션 시작하기", type="primary", use_container_width=True):
         cards = build_kana_cards(use_hira, use_kata, use_daku) if mode.startswith("가나") \
                 else build_korean_cards(use_hira, use_kata, use_daku)
         if not cards:
@@ -172,13 +221,14 @@ with st.sidebar:
             st.session_state.started = True
             st.session_state.mode = mode
             st.session_state.start_time = time.time()
-
-st.title("장태순 여사님 일본어 테스트")
+            st.session_state.page = "play"
+            st.rerun()
 
 if not st.session_state.get("started", False):
-    st.info("옵션을 선택하고 **새 세션 시작하기**를 눌러주세요.")
+    st.info("좌측 옵션을 설정하고 **새 세션 시작하기**를 눌러주세요.")
     st.stop()
 
+# ----------------- 공통 헬퍼 -----------------
 def remaining_time():
     elapsed = int(time.time() - st.session_state.start_time)
     return max(0, LIMIT_SEC - elapsed)
@@ -186,35 +236,35 @@ def remaining_time():
 def go_next():
     st.session_state.idx += 1
     st.session_state.start_time = time.time()
-    st.session_state.play_click = True     # 전환 소리 재생 플래그
+    st.session_state.play_click = True  # 전환 사운드
 
 idx   = st.session_state.idx
 cards = st.session_state.cards
 mode  = st.session_state.mode
 
-# ---- header (progress) ----
+# 상단 진행/타이머
 c1, c2 = st.columns([1,1])
 with c1: st.markdown(f"**문항 {idx+1}/{TOTAL}**")
 with c2: st.markdown(f"**남은 시간: {remaining_time()}s**")
 st.markdown("---")
 
-# 방금 전환되었으면 소리 재생
+# 전환 직후 사운드 재생
 play_click_if_needed()
 
-# ---- content by mode ----
+# 종료 처리
 if idx >= len(cards):
     st.subheader("끝!")
     st.write(f"총 {TOTAL}개 완료했습니다.")
     st.success("다시 하려면 사이드바에서 **새 세션 시작하기**를 누르세요.")
     st.stop()
 
+# 본문
 if mode.startswith("가나"):
     kana = cards[idx]["kana"]
     if remaining_time() <= 0:
         go_next(); st.rerun()
     st.markdown(f"<div style='text-align:center;font-size:{FONT_PX}px;font-weight:900'>{kana}</div>", unsafe_allow_html=True)
-    st.button("다음 ▶", on_click=go_next)
-
+    st.button("다음 ▶", on_click=go_next, use_container_width=True)
 else:
     card  = cards[idx]
     kor   = card["kor"]
@@ -223,14 +273,12 @@ else:
         go_next(); st.rerun()
     st.markdown(f"<div style='text-align:center;font-size:{FONT_PX}px;font-weight:900'>{kor}</div>", unsafe_allow_html=True)
     st.markdown(f"<div style='text-align:center;font-size:22px;color:#666'>( {label} )</div>", unsafe_allow_html=True)
-    st.button("다음 ▶", on_click=go_next)
+    st.button("다음 ▶", on_click=go_next, use_container_width=True)
 
-# ---- footer (공통, 한 번만 출력) ----
-footer = st.container()
-with footer:
-    st.markdown("---")
-    st.caption("7초마다 자동으로 다음 카드로 넘어갑니다. 필요하면 '다음 ▶'으로 스킵하세요.")
+# 공통 푸터(한 번만)
+st.markdown("---")
+st.caption("7초마다 자동으로 다음 카드로 넘어갑니다. 필요하면 '다음 ▶'으로 스킵하세요.")
 
-# 자동 갱신
+# 1초마다 갱신
 time.sleep(1)
 st.rerun()
