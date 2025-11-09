@@ -192,7 +192,7 @@ mode = st.session_state.mode
 
 # 종료 화면
 if idx >= len(cards):
-    st.success("끝")
+    st.success("테스트가 종료되었습니다!")
     st.subheader(f"총 {TOTAL}개 문제를 완료했습니다.")
     st.markdown("---")
     if st.button("처음으로 돌아가기", type="primary", use_container_width=True):
