@@ -15,7 +15,7 @@ st.set_page_config(
     page_title="장태순 여사님 일본어 테스트", 
     page_icon="🇯🇵", 
     layout="centered",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="auto"
 )
 
 # ===== 데이터 =====
@@ -167,8 +167,6 @@ with st.sidebar:
             st.session_state.mode = mode
             st.session_state.start_time = time.time()
             st.session_state.skip = False
-            # 사이드바 자동 닫기
-            st.session_state.sidebar_state = "collapsed"
             st.rerun()
 
 st.markdown(
@@ -193,23 +191,21 @@ if not st.session_state.get("started", False):
     st.stop()
 
 # ===== 진행 영역 =====
-# 사이드바 상태 체크 및 자동 닫기
-if st.session_state.get("started", False) and st.session_state.get("sidebar_state") == "collapsed":
-    st.markdown(
-        """
-        <script>
-            const sidebar = window.parent.document.querySelector('[data-testid="stSidebar"]');
-            if (sidebar) {
-                sidebar.style.transform = 'translateX(-100%)';
-            }
-        </script>
-        """,
-        unsafe_allow_html=True
-    )
-
 idx = st.session_state.idx
 cards = st.session_state.cards
 mode = st.session_state.mode
+
+# 사이드바 숨기기 (진행 중일 때)
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"] {
+        display: none;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 # 종료 화면
 if idx >= len(cards):
