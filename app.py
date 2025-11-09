@@ -2,7 +2,7 @@ import random
 import time
 import streamlit as st
 
-st.set_page_config(page_title="Kana Flashcards (ひらがな・カタカナ)", page_icon="🀄", layout="centered")
+st.set_page_config(page_title="장태순 여사님을 위한 일본어 기초 테스트", page_icon="🀄", layout="centered")
 
 # -----------------------------
 # Data
@@ -19,6 +19,7 @@ HIRAGANA_BASE = {
     "ら":"ra","り":"ri","る":"ru","れ":"re","ろ":"ro",
     "わ":"wa","を":"o","ん":"n",
 }
+
 KATAKANA_BASE = {
     "ア":"a","イ":"i","ウ":"u","エ":"e","オ":"o",
     "カ":"ka","キ":"ki","ク":"ku","ケ":"ke","コ":"ko",
@@ -31,6 +32,7 @@ KATAKANA_BASE = {
     "ラ":"ra","リ":"ri","ル":"ru","レ":"re","ロ":"ro",
     "ワ":"wa","ヲ":"o","ン":"n",
 }
+
 HIRAGANA_DAKUTEN = {
     "が":"ga","ぎ":"gi","ぐ":"gu","げ":"ge","ご":"go",
     "ざ":"za","じ":"ji","ず":"zu","ぜ":"ze","ぞ":"zo",
@@ -38,6 +40,7 @@ HIRAGANA_DAKUTEN = {
     "ば":"ba","び":"bi","ぶ":"bu","べ":"be","ぼ":"bo",
     "ぱ":"pa","ぴ":"pi","ぷ":"pu","ぺ":"pe","ぽ":"po",
 }
+
 KATAKANA_DAKUTEN = {
     "ガ":"ga","ギ":"gi","グ":"gu","ゲ":"ge","ゴ":"go",
     "ザ":"za","ジ":"ji","ズ":"zu","ゼ":"ze","ゾ":"zo",
@@ -159,11 +162,11 @@ with col1:
 with col2:
     st.markdown(f"**남은 시간: {remaining_time()}s**")
 
-# Auto-refresh to make the countdown tick
+# Auto-refresh countdown
 if not st.session_state.revealed and remaining_time() > 0:
-    st.experimental_rerun()
+    st.rerun()
 
-# If time is up and not revealed, reveal now
+# Auto reveal when time expires
 if remaining_time() <= 0 and not st.session_state.revealed:
     reveal(auto=True)
 
