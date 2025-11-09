@@ -1,17 +1,41 @@
-# app.py — 두 모드
+# app.py — 두 모드 + 사운드 + 사이드바 숨기기 + 큰 글씨/슬라이더
 # 1) 가나 보기(자동 넘김, 입력 없음)
-# 2) 한국어 보기(한글 발음 + "(히라가나/가타카나)" 라벨만 표시, 자동 넘김)
-# Streamlit 1.39: 콜백 내부에서 st.rerun() 사용하지 않음
+# 2) 한국어 보기(한글 발음 + "(히라가나/가타카나)" 라벨만, 자동 넘김)
+# Streamlit 1.39: 콜백 내부 st.rerun() 사용하지 않고, 메인 흐름 끝에서만 호출
 
 import time
 import random
+import base64
 import streamlit as st
 
 st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🇯🇵", layout="centered")
 
-# -----------------------------
-# Kana Data (기본 + 탁/반탁음)
-# -----------------------------
+# ────────────────────────────────────────────────────────────────────────────
+# 작은 '철컥' 클릭 사운드 (mp3, 아주 짧은 샘플을 base64로 내장)
+# iOS/모바일은 사용자 상호작용 후에만 자동 재생이 허용될 수 있음
+# ────────────────────────────────────────────────────────────────────────────
+CLICK_MP3_B64 = (
+    "SUQzAwAAAAAAQ1JFQU1FAAAAAP//7QAAACQAAAACAAACAAACAAACAAAAAAD//8AAACQAAABAAA"
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "AAAA"  # (매우 짧은 클릭 사운드의 더미 베이스64; 실제 환경에선 원하는 mp3로 교체 가능)
+)
+def play_click_if_needed():
+    if st.session_state.get("play_click", False) and st.session_state.get("sound_enabled", False):
+        st.session_state.play_click = False
+        src = f"data:audio/mp3;base64,{CLICK_MP3_B64}"
+        # iOS에서 자동재생은 사용자 상호작용이 있었을 때만 가능
+        st.markdown(
+            f"""
+            <audio autoplay>
+              <source src="{src}" type="audio/mpeg">
+            </audio>
+            """,
+            unsafe_allow_html=True,
+        )
+
+# ────────────────────────────────────────────────────────────────────────────
+# 데이터
+# ────────────────────────────────────────────────────────────────────────────
 HIRAGANA_BASE = {
     "あ":"a","い":"i","う":"u","え":"e","お":"o",
     "か":"ka","き":"ki","く":"ku","け":"ke","こ":"ko",
@@ -51,7 +75,6 @@ KATAKANA_DAKUTEN = {
     "パ":"pa","ピ":"pi","プ":"pu","ペ":"pe","ポ":"po",
 }
 
-# 한국어(한글) 근사 발음 매핑 (학습용 단순화)
 ROMA2HANGUL = {
     "a":"아","i":"이","u":"우","e":"에","o":"오",
     "ka":"카","ki":"키","ku":"쿠","ke":"케","ko":"코",
@@ -70,12 +93,12 @@ ROMA2HANGUL = {
     "pa":"파","pi":"피","pu":"푸","pe":"페","po":"포",
 }
 
-TOTAL = 20        # 카드 개수
-LIMIT_SEC = 7     # 카드당 시간(초)
+TOTAL = 20
+LIMIT_SEC = 7
 
-# -----------------------------
+# ────────────────────────────────────────────────────────────────────────────
 # 역매핑: romaji -> {"hira":kana?, "kata":kana?}
-# -----------------------------
+# ────────────────────────────────────────────────────────────────────────────
 def build_roma2kana():
     r2k = {}
     for k, r in HIRAGANA_BASE.items():
@@ -87,12 +110,11 @@ def build_roma2kana():
     for k, r in KATAKANA_DAKUTEN.items():
         r2k.setdefault(r, {})["kata"] = k
     return r2k
-
 ROMA2KANA = build_roma2kana()
 
-# -----------------------------
+# ────────────────────────────────────────────────────────────────────────────
 # 덱 구성
-# -----------------------------
+# ────────────────────────────────────────────────────────────────────────────
 def build_pool_dict(use_hira, use_kata, use_daku):
     pool = {}
     if use_hira:
@@ -106,14 +128,12 @@ def build_pool_dict(use_hira, use_kata, use_daku):
     return pool  # kana->romaji
 
 def build_kana_cards(use_hira, use_kata, use_daku):
-    # 가나 보기 모드: 화면에 '가나'만 표시
     d = build_pool_dict(use_hira, use_kata, use_daku)
     items = list(d.keys())
     random.shuffle(items)
     return [{"kana": k} for k in items[:TOTAL]]
 
 def build_korean_cards(use_hira, use_kata, use_daku):
-    # 한국어 보기 모드: 한글 발음 + "(히라가나/가타카나)" 라벨만 표시
     d = build_pool_dict(use_hira, use_kata, use_daku)  # kana->romaji
     romas = list(set(d.values()))
     random.shuffle(romas)
@@ -131,20 +151,51 @@ def build_korean_cards(use_hira, use_kata, use_daku):
             continue
         target = random.choice(enabled) if len(enabled) > 1 else enabled[0]
         label = "히라가나" if target == "hira" else "가타카나"
-        cards.append({
-            "kor": kor,         # 크게 보여줄 한글 발음
-            "label": label,     # (히라가나/가타카나) 라벨만
-            # 참고용으로 실제 표기가 필요하면 아래 두 값을 사용 가능
-            "hira": hira,
-            "kata": kata,
-        })
+        cards.append({"kor": kor, "label": label, "hira": hira, "kata": kata})
         if len(cards) >= TOTAL:
             break
     return cards
 
-# -----------------------------
-# 사이드바 옵션
-# -----------------------------
+# ────────────────────────────────────────────────────────────────────────────
+# 초기 상태
+# ────────────────────────────────────────────────────────────────────────────
+if "started" not in st.session_state:
+    st.session_state.started = False
+if "fullscreen" not in st.session_state:
+    st.session_state.fullscreen = False
+if "sound_enabled" not in st.session_state:
+    st.session_state.sound_enabled = False
+if "play_click" not in st.session_state:
+    st.session_state.play_click = False
+
+# ────────────────────────────────────────────────────────────────────────────
+# 상단 컨트롤 바 (사운드/폰트크기/사이드바 토글)
+# ────────────────────────────────────────────────────────────────────────────
+with st.container():
+    c1, c2, c3 = st.columns([1,1,1])
+    with c1:
+        font_size = st.slider("글꼴 크기", 120, 260, 190, step=10, help="카드 글자 크기")
+    with c2:
+        st.checkbox("🔊 사운드 활성화", value=st.session_state.sound_enabled,
+                    key="sound_enabled", help="iPad/iOS에서는 한 번 체크(터치)해야 자동 재생 가능")
+    with c3:
+        def toggle_sidebar():
+            st.session_state.fullscreen = not st.session_state.fullscreen
+        label = "사이드바 숨기기" if not st.session_state.fullscreen else "사이드바 보이기"
+        st.button(label, on_click=toggle_sidebar)
+
+# 사이드바 표시/숨김 CSS
+if st.session_state.fullscreen:
+    st.markdown("""
+        <style>
+        [data-testid="stSidebar"] {display: none;}
+        .block-container {padding-top: 1rem;}
+        </style>
+    """, unsafe_allow_html=True)
+
+# ────────────────────────────────────────────────────────────────────────────
+# 사이드바 (모드/덱 선택)
+# ────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("옵션")
     mode = st.radio("모드 선택", ["가나 보기(자동 넘김)", "한국어 보기(라벨만 표시)"], index=0)
@@ -152,9 +203,6 @@ with st.sidebar:
     use_kata = st.checkbox("가타카나 포함", value=True)
     use_daku = st.checkbox("탁음/반탁음 포함", value=True)
     st.caption(f"세션: 무작위 {TOTAL}문항 · 카드당 {LIMIT_SEC}초")
-
-    if "started" not in st.session_state:
-        st.session_state.started = False
 
     if st.button("새 세션 시작하기", type="primary"):
         if mode.startswith("가나"):
@@ -171,35 +219,38 @@ with st.sidebar:
             st.session_state.mode = mode
             st.session_state.start_time = time.time()
 
+# 제목
 st.title("장태순 여사님 일본어 테스트")
 
 if not st.session_state.get("started", False):
     st.info("옵션을 선택하고 **새 세션 시작하기**를 눌러주세요.")
     st.stop()
 
-# -----------------------------
-# Helper & 진행 제어
-# -----------------------------
+# 공통 헬퍼
 def remaining_time():
     elapsed = int(time.time() - st.session_state.start_time)
     return max(0, LIMIT_SEC - elapsed)
 
 def go_next():
+    # 다음 카드로 진행 + 클릭 사운드 플래그
     st.session_state.idx += 1
     st.session_state.start_time = time.time()
+    st.session_state.play_click = True  # 다음 렌더에서 재생
 
+# 상태 단축
 idx = st.session_state.idx
 cards = st.session_state.cards
 mode = st.session_state.mode
 
 # 종료 화면
 if idx >= len(cards):
+    play_click_if_needed()
     st.subheader("끝!")
     st.write(f"총 {TOTAL}개 완료했습니다.")
     st.success("다시 하려면 사이드바에서 **새 세션 시작하기**를 누르세요.")
     st.stop()
 
-# 공통 상단 UI
+# 상단 진행/타이머
 c1, c2 = st.columns([1,1])
 with c1:
     st.markdown(f"**문항 {idx+1}/{TOTAL}**")
@@ -207,9 +258,10 @@ with c2:
     st.markdown(f"**남은 시간: {remaining_time()}s**")
 st.markdown("---")
 
-# -----------------------------
-# 모드 A: 가나 보기(자동 넘김)
-# -----------------------------
+# 사운드 재생(필요 시)
+play_click_if_needed()
+
+# 모드 A: 가나 보기
 if mode.startswith("가나"):
     kana = cards[idx]["kana"]
 
@@ -219,7 +271,7 @@ if mode.startswith("가나"):
         st.rerun()
 
     st.markdown(
-        f"<div style='text-align:center;font-size:150px;font-weight:800'>{kana}</div>",
+        f"<div style='text-align:center;font-size:{font_size}px;font-weight:900'>{kana}</div>",
         unsafe_allow_html=True
     )
 
@@ -231,24 +283,18 @@ if mode.startswith("가나"):
     time.sleep(1)
     st.rerun()
 
-# -----------------------------
-# 모드 B: 한국어 보기(라벨만 표시)
-#   - 한국어(한글) 발음 크게 표시
-#   - 그 아래 작은 글씨로 (히라가나) 또는 (가타카나) 라벨만 보여줌
-#   - 7초 자동 넘김 + 스킵 버튼
-# -----------------------------
+# 모드 B: 한국어 보기(라벨만)
 else:
     card = cards[idx]
     kor = card["kor"]
     label = card["label"]  # "히라가나" or "가타카나"
 
-    # 시간 초과 시 자동 다음
     if remaining_time() <= 0:
         go_next()
         st.rerun()
 
     st.markdown(
-        f"<div style='text-align:center;font-size:140px;font-weight:800'>{kor}</div>",
+        f"<div style='text-align:center;font-size:{font_size}px;font-weight:900'>{kor}</div>",
         unsafe_allow_html=True
     )
     st.markdown(
