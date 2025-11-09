@@ -1,13 +1,11 @@
-# app.py — 제목 클릭하면 초기 화면으로, 초기 화면(옵션 영역) 중앙에 사진 표시
-# 모드:
-#   1) 가나 보기(자동 넘김)
-#   2) 한국어 보기(한글 발음 + "(히라가나/가타카나)" 라벨만, 자동 넘김)
-# 카드 전환 때마다 click.wav 재생, 글꼴 220px 고정
+# app.py — 제목 클릭 초기 화면으로 / 초기 화면(옵션 옆) 중앙에 사진 표시
+# 카드 전환 시 'click.wav' 재생, 글꼴 220px 고정
 
 import time
 import random
 import base64
 from pathlib import Path
+from PIL import Image
 import streamlit as st
 
 st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🇯🇵", layout="centered")
@@ -23,11 +21,10 @@ CLICK_WAV_PATHS       = ["click.wav", "assets/click.wav"]
 # ----------------- 쿼리파라미터: reset 처리 -----------------
 qp = st.experimental_get_query_params()
 if qp.get("reset") == ["1"]:
-    # 초기 화면 상태로 리셋
     for k in ["started", "cards", "idx", "mode", "start_time", "play_click"]:
         if k in st.session_state:
             del st.session_state[k]
-    st.experimental_set_query_params()  # URL 정리
+    st.experimental_set_query_params()
     st.rerun()
 
 # ----------------- 리소스 로더 -----------------
@@ -40,10 +37,11 @@ def _load_click_b64():
     return None
 
 @st.cache_resource(show_spinner=False)
-def _find_home_image_path():
+def load_home_image():
     for p in HOME_IMAGE_CANDIDATES:
-        if Path(p).exists():
-            return p
+        fp = Path(p)
+        if fp.exists() and fp.is_file():
+            return Image.open(fp)
     return None
 
 def play_click_if_needed():
@@ -86,12 +84,15 @@ KATAKANA_BASE = {
     "ワ":"wa","ヲ":"o","ン":"n",
 }
 HIRAGANA_DAKUTEN = {
-    "が":"ga","ぎ":"gi","ぐ":"gu","げ":"ge","ご":"go",
+    "가":"ga","ぎ":"gi","ぐ":"gu","げ":"ge","ご":"go",
     "ざ":"za","じ":"ji","ず":"zu","ぜ":"ze","ぞ":"zo",
     "だ":"da","ぢ":"ji","づ":"zu","で":"de","ど":"do",
     "ば":"ba","び":"bi","ぶ":"bu","べ":"be","ぼ":"bo",
     "ぱ":"pa","ぴ":"pi","ぷ":"pu","ぺ":"pe","ぽ":"po",
 }
+# 위 줄 첫 키 오타 방지: 실제 키로 교체
+HIRAGANA_DAKUTEN["が"] = "ga"
+
 KATAKANA_DAKUTEN = {
     "ガ":"ga","ギ":"gi","グ":"gu","ゲ":"ge","ゴ":"go",
     "ザ":"za","ジ":"ji","ズ":"zu","ゼ":"ze","ゾ":"zo",
@@ -136,7 +137,7 @@ def build_pool_dict(use_hira, use_kata, use_daku):
     if use_kata:
         pool.update(KATAKANA_BASE)
         if use_daku: pool.update(KATAKANA_DAKUTEN)
-    return pool  # kana->romaji
+    return pool
 
 def build_kana_cards(use_hira, use_kata, use_daku):
     d = build_pool_dict(use_hira, use_kata, use_daku)
@@ -144,7 +145,7 @@ def build_kana_cards(use_hira, use_kata, use_daku):
     return [{"kana": k} for k in items[:TOTAL]]
 
 def build_korean_cards(use_hira, use_kata, use_daku):
-    d = build_pool_dict(use_hira, use_kata, use_daku)  # kana->romaji
+    d = build_pool_dict(use_hira, use_kata, use_daku)
     romas = list(set(d.values())); random.shuffle(romas)
     cards = []
     for r in romas:
@@ -164,7 +165,7 @@ def build_korean_cards(use_hira, use_kata, use_daku):
 if "started" not in st.session_state: st.session_state.started = False
 if "play_click" not in st.session_state: st.session_state.play_click = False
 
-# ----------------- 제목(클릭하면 초기 화면로) -----------------
+# ----------------- 제목(클릭 → 초기 화면) -----------------
 st.markdown(
     """
     <div style="text-align:center; margin-top:0.2rem; margin-bottom:0.8rem;">
@@ -176,7 +177,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ----------------- 사이드바(항상 표시) -----------------
+# ----------------- 사이드바 -----------------
 with st.sidebar:
     st.header("옵션")
     mode = st.radio("모드 선택", ["가나 보기(자동 넘김)", "한국어 보기(라벨만 표시)"], index=0)
@@ -197,20 +198,16 @@ with st.sidebar:
             st.session_state.start_time = time.time()
             st.rerun()
 
-# ----------------- 초기 화면(옵션 옆 영역에 사진 표시) -----------------
+# ----------------- 초기 화면: 중앙 사진 표시 -----------------
 if not st.session_state.get("started", False):
-    img_path = _find_home_image_path()
-    if img_path:
-        st.markdown(
-            f"""
-            <div style="display:flex; justify-content:center; align-items:center;">
-              <img src="app://{img_path}" style="max-width:66%; height:auto; border-radius:16px; box-shadow:0 6px 24px rgba(0,0,0,0.12);" />
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+    img = load_home_image()
+    if img:
+        left, mid, right = st.columns([1, 2, 1])
+        with mid:
+            st.image(img, use_container_width=True)
     else:
-        st.info("좌측 옵션을 설정하고 **새 세션 시작하기**를 눌러주세요.\n\n(초기 화면 이미지: `home.png` 또는 `home.jpg`를 저장소 루트에 추가하면 사진이 표시됩니다.)")
+        st.info("좌측 옵션을 설정하고 **새 세션 시작하기**를 눌러주세요.\n\n"
+                "(초기 화면 이미지: `home.png` 또는 `home.jpg`를 저장소 루트나 assets/ 폴더에 추가하세요.)")
     st.stop()
 
 # ----------------- 공통 헬퍼 -----------------
@@ -221,7 +218,7 @@ def remaining_time():
 def go_next():
     st.session_state.idx += 1
     st.session_state.start_time = time.time()
-    st.session_state.play_click = True  # 전환 사운드
+    st.session_state.play_click = True
 
 idx   = st.session_state.idx
 cards = st.session_state.cards
@@ -240,7 +237,6 @@ play_click_if_needed()
 if idx >= len(cards):
     st.subheader("끝!")
     st.write(f"총 {TOTAL}개 완료했습니다.")
-    # 처음으로 버튼(제목 클릭과 동일하게 reset=1)
     if st.button("처음으로 ↩", use_container_width=True):
         st.experimental_set_query_params(reset="1")
         st.rerun()
