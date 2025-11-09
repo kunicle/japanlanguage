@@ -1,17 +1,17 @@
-# app.py — Safari 확실 호환판
-# - components.html()로 1초마다 전체 리로드 → 타이머 갱신/시간만료 감지 확실
-# - sleep() 없음, 콜백 내부 st.rerun() 없음
-# - 0초가 되면 서버가 다음 카드로 자동 진행(go_next)
-# - 홈 사진 data URL 렌더링
+# app.py — 최종 완성본
+# - 자동 넘김: JS setTimeout → URL에 ?advance=1 추가 → 같은 세션에서 다음 카드
+# - 타이머: JS가 250ms마다 숫자만 갱신(서버는 고정)
+# - 콜백 내부 st.rerun() 사용 안 함, time.sleep() 없음
+# - 제목 클릭 → 초기화(옵션 화면)
+# - 홈 사진: data URL 렌더링
 # - 모드: 1) 가나 보기(자동)  2) 한국어 보기(라벨만, 자동)
-# - 카드 전환 시 click.wav 재생(브라우저 정책상 첫 상호작용 후 재생될 수 있음)
+# - 카드 전환 시 click.wav 재생(브라우저 정책상 첫 상호작용 이후 재생될 수 있음)
 
 import base64
 import time
 import random
 from pathlib import Path
 import streamlit as st
-from streamlit.components.v1 import html
 
 st.set_page_config(page_title="장태순 여사님 일본어 테스트", page_icon="🇯🇵", layout="centered")
 
@@ -76,7 +76,7 @@ HIRAGANA_BASE = {
     "な":"na","に":"ni","ぬ":"nu","ね":"ne","の":"no",
     "は":"ha","ひ":"hi","ふ":"fu","へ":"he","ほ":"ho",
     "ま":"ma","み":"mi","む":"mu","め":"me","も":"mo",
-    "야":"ya","ゆ":"yu","よ":"yo",
+    "や":"ya","ゆ":"yu","よ":"yo",
     "ら":"ra","り":"ri","る":"ru","れ":"re","ろ":"ro",
     "わ":"wa","を":"o","ん":"n",
 }
@@ -235,25 +235,48 @@ def go_next():
     st.session_state.start_time = time.time()
     st.session_state.play_click = True
 
+# ----------------- 서버 측: advance 쿼리 처리(있으면 다음 카드 진행) -----------------
+if qp.get("advance") == ["1"] and st.session_state.get("started", False):
+    st.experimental_set_query_params()   # advance 제거
+    go_next()
+    st.rerun()
+
 # ----------------- 본문 -----------------
 idx   = st.session_state.idx
 cards = st.session_state.cards
 mode  = st.session_state.mode
 
-# 서버 측 시간 만료 감지 → 다음 카드
-if remaining_time() <= 0:
-    go_next()
-    st.rerun()
-
-# 상단(표시 숫자는 서버 계산값; 아래에서 1초마다 전체 리로드해 갱신)
+# 상단(우측 타이머는 JS로 250ms마다 갱신)
 c1, c2 = st.columns([1,1])
 with c1:
     st.markdown(f"**문항 {idx+1}/{TOTAL}**")
 with c2:
-    st.markdown(f"**남은 시간: {remaining_time()}s**")
+    st.markdown(
+        f"""
+        <div style="text-align:right; font-weight:600">
+          남은 시간: <span id="timer">{remaining_time()}</span>s
+        </div>
+        <script>
+          (function(){{
+            const startMs = {int(st.session_state.start_time * 1000)};
+            const limitMs = {LIMIT_SEC} * 1000;
+            const el = document.getElementById('timer');
+            if (window._kanaTick) clearInterval(window._kanaTick);
+            function tick(){{
+              const now = Date.now();
+              const remain = Math.max(0, Math.ceil((startMs + limitMs - now)/1000));
+              if (el) el.textContent = String(remain);
+            }}
+            tick();
+            window._kanaTick = setInterval(tick, 250);
+          }})();
+        </script>
+        """,
+        unsafe_allow_html=True,
+    )
 st.markdown("---")
 
-# 전환 사운드
+# 전환 사운드(있으면)
 play_click_if_needed()
 
 # 종료 처리
@@ -284,20 +307,23 @@ if st.button("다음 ▶", use_container_width=True):
 st.markdown("---")
 st.caption("7초마다 자동으로 다음 카드로 넘어갑니다. 필요하면 '다음 ▶'으로 스킵하세요.")
 
-# ----------------- 핵심: 1초마다 전체 리로드(브라우저 독립적으로 동작) -----------------
-# started 상태에서만 활성화
-if st.session_state.get("started", False):
-    html(
-        """
-        <script>
-        (function(){
-          if (window._kanaReload) clearInterval(window._kanaReload);
-          // 1초마다 페이지 전체를 새로고침 -> 서버가 남은시간 재계산/만료 시 다음 카드 진행
-          window._kanaReload = setInterval(function(){
-            window.top.location.reload();
-          }, 1000);
-        })();
-        </script>
-        """,
-        height=0,
-    )
+# ----------------- 자동 넘김(JS: advance=1 붙여 같은 세션에서 재실행) -----------------
+ms_left = max(0, int((st.session_state.start_time + LIMIT_SEC - time.time()) * 1000))
+if ms_left < 100:
+    ms_left = LIMIT_SEC * 1000
+
+st.markdown(
+    f"""
+    <script>
+      (function(){{
+        if (window._advTimer) clearTimeout(window._advTimer);
+        window._advTimer = setTimeout(function(){{
+          const url = new URL(window.location.href);
+          url.searchParams.set('advance','1');   // 쿼리만 변경
+          window.location.replace(url.toString()); // 세션 유지하며 재실행
+        }}, {ms_left});
+      }})();
+    </script>
+    """,
+    unsafe_allow_html=True,
+)
