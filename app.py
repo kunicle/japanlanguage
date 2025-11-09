@@ -1,7 +1,8 @@
-# app.py — 최종본 (Safari 호환 + 실시간 타이머)
-# - sleep() 제거, 자동 넘김은 JS setTimeout
-# - 콜백 내부 st.rerun() 사용 안 함 (no-op 경고 제거)
-# - 제목 클릭 → 초기화(옵션 화면), 홈 사진은 data URL 렌더링
+# app.py — Safari 호환 + 실시간 타이머 + 자동 다음(신뢰성 강화)
+# - sleep() 없음, 콜백 내부 st.rerun() 없음
+# - 타이머는 JS가 250ms마다 갱신, 0초가 되면 window.location.reload()
+# - 리로드 후 파이썬이 시간 만료를 감지해 다음 카드로 진행
+# - 홈 사진은 data URL 렌더링
 # - 모드: 1) 가나 보기(자동)  2) 한국어 보기(라벨만, 자동)
 # - 카드 전환 시 click.wav 재생(브라우저 정책상 첫 상호작용 후 재생될 수 있음)
 
@@ -52,7 +53,6 @@ def load_home_image_bytes_and_mime():
     return None, None
 
 def play_click_if_needed():
-    # 사파리는 자동재생을 막을 수 있음(첫 상호작용 이후에는 재생될 가능성↑)
     if st.session_state.get("play_click", False):
         st.session_state.play_click = False
         b64 = _load_click_b64()
@@ -234,18 +234,17 @@ def go_next():
     st.session_state.start_time = time.time()
     st.session_state.play_click = True
 
-# 자동 넘김 쿼리 처리(먼저)
-if qp.get("advance") == ["1"] and st.session_state.get("started", False):
-    st.experimental_set_query_params()  # advance 제거
-    go_next()
-    st.rerun()
-
 # ----------------- 본문 -----------------
 idx   = st.session_state.idx
 cards = st.session_state.cards
 mode  = st.session_state.mode
 
-# 상단 표시(타이머는 JS로 250ms마다 갱신)
+# 시간 만료 시 서버에서 바로 다음 카드로
+if remaining_time() <= 0:
+    go_next()
+    st.rerun()
+
+# 상단 표시(타이머는 JS로 250ms마다 갱신 + 0이면 reload)
 c1, c2 = st.columns([1,1])
 with c1:
     st.markdown(f"**문항 {idx+1}/{TOTAL}**")
@@ -262,8 +261,16 @@ with c2:
             const el = document.getElementById('timer');
             function tick(){{
               const now = Date.now();
-              let remain = Math.max(0, Math.ceil((startMs + limitMs - now) / 1000));
+              let remainMs = (startMs + limitMs) - now;
+              let remain = Math.max(0, Math.ceil(remainMs/1000));
               if (el) el.textContent = String(remain);
+              if (remainMs <= 0) {{
+                // 한 번만 새로고침
+                if (!window._kanaReloaded) {{
+                  window._kanaReloaded = true;
+                  window.location.reload();
+                }}
+              }}
             }}
             tick();
             if (window._kanaTimer) clearInterval(window._kanaTimer);
@@ -298,33 +305,10 @@ else:
     st.markdown(f"<div style='text-align:center;font-size:{FONT_PX}px;font-weight:900'>{kor}</div>", unsafe_allow_html=True)
     st.markdown(f"<div style='text-align:center;font-size:22px;color:#666'>( {label} )</div>", unsafe_allow_html=True)
 
-# 수동 스킵(콜백 내부 rerun 사용 안 함)
+# 수동 스킵
 if st.button("다음 ▶", use_container_width=True):
     go_next()
     st.rerun()
 
 st.markdown("---")
 st.caption("7초마다 자동으로 다음 카드로 넘어갑니다. 필요하면 '다음 ▶'으로 스킵하세요.")
-
-# ----------------- 자동 넘김(JS setTimeout) -----------------
-ms_left = int(max(0.0, (st.session_state.start_time + LIMIT_SEC) - time.time()) * 1000)
-if ms_left < 100:
-    ms_left = LIMIT_SEC * 1000
-
-st.markdown(
-    f"""
-    <script>
-      (function(){{
-        const usp = new URLSearchParams(window.location.search);
-        if (!usp.has('advance')) {{
-          if (window._advTimer) clearTimeout(window._advTimer);
-          window._advTimer = setTimeout(function(){{
-            usp.set('advance','1');
-            window.location.search = '?' + usp.toString();
-          }}, {ms_left});
-        }}
-      }})();
-    </script>
-    """,
-    unsafe_allow_html=True,
-)
